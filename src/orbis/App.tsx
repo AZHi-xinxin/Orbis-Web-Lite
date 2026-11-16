@@ -12,6 +12,7 @@ import { assetUrl } from './assets.js'
 import { manual } from './help.js'
 import { profileName } from './profile.js'
 import { MessageActions, UsageRecord } from './MessageFooter.js'
+import { SentinelTimeline } from './SentinelTimeline.js'
 import {
   defaultConversation,
   defaultGeneration,
@@ -1012,11 +1013,18 @@ export function App() {
             </div>
           )}
           {shown.map((m) => (
-            <article key={m.id} className={'message ' + m.role} id={'msg-' + m.id}>
+            <article key={m.id} className={'message ' + (m.role === 'user' && m.event ? 'sentinel-event' : m.role)} id={'msg-' + m.id}>
               {m.voiceSessionEnd ? (
                 <CallHistoryCard call={w.voiceSessions!.find((c) => c.id === m.voiceSessionEnd)!}
                   messages={w.messages} name={state.settings.name} live={call && activeSession.current?.id === m.voiceSessionEnd}
                   busy={busy} onRetry={() => void retryCallSummary(m.voiceSessionEnd!)} onReturn={() => setCallMinimized(false)} />
+              ) : m.role === 'user' && m.event ? (
+                <SentinelTimeline message={m}>
+                  {!m.retracted && <MessageActions message={m} disabled={busy}
+                    quote={() => { setQuote(m.id); pendingFocus.current = true }}
+                    copy={() => void navigator.clipboard.writeText(m.text).then(() => setNotice('已复制')).catch(fail)}
+                    revoke={() => void revoke(m)} speak={() => void speak(m.text)} />}
+                </SentinelTimeline>
               ) : m.role === 'tool' ? (
                 <details className="tool">
                   <summary>{m.status === 'working' ? '◌' : '◇'} 工具结果</summary>

@@ -330,6 +330,20 @@ h1 {
 .message.user {
   align-items: flex-end;
 }
+
+/* Wakeups are timeline events, independent of human message bubbles. */
+.message.sentinel-event { align-self: stretch; width: 100%; max-width: 100%; margin: 4px 0 20px; }
+.sentinel-timeline { width: 100%; color: var(--muted); }
+.sentinel-timeline > summary { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; cursor: pointer; list-style: none; font-size: 12px; }
+.sentinel-timeline > summary::-webkit-details-marker { display: none; }
+.sentinel-timeline > summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 8px; }
+.sentinel-time-line { width: 32px; height: 1px; background: var(--line); }
+.sentinel-chevron { transition: transform .15s; }
+.sentinel-timeline[open] .sentinel-chevron { transform: rotate(180deg); }
+.sentinel-event-content { padding: 10px 0 16px; color: var(--ink); border-bottom: 1px solid var(--line); }
+.sentinel-event-title { font-size: 13px; font-weight: 600; }
+.sentinel-event-time { color: var(--muted); font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
+.sentinel-event-content > p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin: 14px 0 8px; }
 .speaker {
   color: var(--muted);
   font-size: 11px;
