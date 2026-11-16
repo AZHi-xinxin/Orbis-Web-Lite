@@ -24,6 +24,8 @@ export type Message = {
   quoteId?: string
   retracted?: boolean
   thinkingBlocks?: Record<string, unknown>[]
+  usage?: import('./usage.js').Usage
+  elapsedMs?: number
 }
 export type NoteRevision = {
   revision: number

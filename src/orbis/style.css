@@ -379,15 +379,40 @@ h1 {
 }
 .message-actions {
   display: flex;
-  gap: 4px;
+  gap: 10px;
   align-items: center;
-  opacity: 0.65;
+  color: var(--muted);
   flex-wrap: wrap;
 }
 .message-actions button {
-  font-size: 11px;
-  padding: 4px 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  min-width: 40px;
+  padding: 9px;
+  color: inherit;
 }
+.message-more { position: relative; }
+.message-more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 8px; }
+.message-more > summary::-webkit-details-marker, .usage-record > summary::-webkit-details-marker { display: none; }
+.message-more > summary:hover { background: var(--soft); }
+.message-menu { position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 4; min-width: 116px; padding: 5px; background: var(--panel); border: 1px solid var(--line); border-radius: 13px; box-shadow: 0 5px 24px #0002; }
+.user .message-menu { left: auto; right: 0; }
+.message-actions .message-menu button { width: 100%; justify-content: flex-start; gap: 9px; font-size: 14px; }
+.usage-record { width: 100%; color: var(--muted); font-size: 12px; margin: 8px 0 10px; }
+.usage-record > summary { display: flex; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; padding: 8px 0; }
+.usage-collapse, .usage-record[open] .usage-expand { display: none; }
+.usage-record[open] .usage-collapse { display: inline; }
+.usage-card { margin-top: 4px; padding: 14px 16px; background: var(--soft); border-radius: 14px; }
+.usage-card dl { margin: 0; display: grid; gap: 10px; }
+.usage-card dt { font-size: 11px; }
+.usage-card dd { margin: 3px 0 0; color: var(--ink); font-size: 13px; }
+.usage-card p { font-size: 11px; margin: 12px 0 0; line-height: 1.6; }
+.human-thought-editor { background: var(--soft); border-radius: 14px; padding: 8px 10px; margin-bottom: 8px; }
+.human-thought-editor > div { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; color: var(--muted); }
+.human-thought-editor button { white-space: nowrap; font-size: 12px; min-height: 34px; }
+.composer .human-thought-editor textarea { width: 100%; min-height: 58px; background: transparent; padding: 6px 0; border: 0; }
 .message-actions:hover {
   opacity: 1;
 }

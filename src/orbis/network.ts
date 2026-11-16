@@ -6,6 +6,7 @@ import {
 } from './configuration.js'
 import { readServerSentEvents } from '../services/api/sse.js'
 import { profileContext } from './profile.js'
+import { mergeUsage, providerUsage, type RawUsage, type Usage } from './usage.js'
 import {
   displayText,
   liveSelection,
@@ -25,7 +26,7 @@ export type Output = {
   text: string
   reasoning: string
   calls: Call[]
-  usage?: unknown
+  usage?: Usage
   thinkingBlocks?: Record<string, unknown>[]
 }
 const field = (type: string, description: string) => ({ type, description })
@@ -250,6 +251,7 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
       ...parameters,
       messages,
       stream: true,
+      stream_options: { include_usage: true },
       tools: tools.map((t) => ({
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.input_schema },
@@ -324,6 +326,7 @@ export async function streamModel(
     calls = new Map<number, Call>(),
     thinking = new Map<number, Record<string, unknown>>()
   let complete = false
+  let usage: RawUsage = {}
   for await (const event of readServerSentEvents(res.body, signal)) {
     if (event.data === '[DONE]') {
       complete = true
@@ -333,7 +336,7 @@ export async function streamModel(
     if (e.error || e.type === 'error') throw Error(e.error?.message ?? '服务端流错误')
     if (settings.protocol === 'openai') {
       const c = e.choices?.[0]
-      if (e.usage) out.usage = e.usage
+      if (e.usage) usage = mergeUsage(usage, e.usage)
       if (c?.delta?.content) out.text += c.delta.content
       if (c?.delta?.reasoning_content) out.reasoning += c.delta.reasoning_content
       for (const tc of c?.delta?.tool_calls ?? []) {
@@ -371,10 +374,12 @@ export async function streamModel(
           if (call) call.arguments += e.delta.partial_json
         }
       }
-      if (e.type === 'message_delta' && e.usage) out.usage = e.usage
+      if (e.type === 'message_start') usage = mergeUsage(usage, e.message?.usage)
+      if (e.type === 'message_delta') usage = mergeUsage(usage, e.usage)
       if (e.type === 'message_stop') complete = true
     }
     out.calls = [...calls.values()]
+    out.usage = providerUsage(usage, settings.protocol)
     out.thinkingBlocks = [...thinking.values()]
     onOutput({ ...out, calls: [...out.calls] })
   }

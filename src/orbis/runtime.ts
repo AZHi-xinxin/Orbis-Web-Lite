@@ -100,6 +100,8 @@ export async function generate(
   current = controller
   let release: (() => Promise<void>) | undefined
   let responseId: string | undefined
+  let requestStarted = 0
+  let streamedUsage: Message['usage']
   let nextQuote: string | undefined
   let streamedText = '',
     streamedReasoning = ''
@@ -156,6 +158,8 @@ export async function generate(
         w = windowOf(snapshot, window),
         tools = enabledTools(snapshot, window)
       const base = w.messages.find((m) => m.id === id)!
+      requestStarted = performance.now()
+      streamedUsage = undefined
       const result: Output = await streamModel(
         snapshot,
         { ...w, messages: w.messages.filter((m) => m.id !== id) },
@@ -165,6 +169,7 @@ export async function generate(
         (o) => {
           streamedText = o.text
           streamedReasoning = o.reasoning
+          streamedUsage = o.usage
           onStream({ ...base, text: o.text, reasoning: o.reasoning, calls: o.calls })
         }
       )
@@ -177,6 +182,8 @@ export async function generate(
           thinkingBlocks: result.thinkingBlocks,
           calls: result.calls,
           status: 'done',
+          usage: result.usage,
+          elapsedMs: Math.max(0, performance.now() - requestStarted),
         })
       })
       onState(saved.state)
@@ -243,6 +250,8 @@ export async function generate(
           if (m && m.status === 'working') {
             m.status = controller.signal.aborted ? 'stopped' : 'error'
             m.reasoning = streamedReasoning
+            m.usage = streamedUsage
+            if (requestStarted) m.elapsedMs = Math.max(0, performance.now() - requestStarted)
             m.text = streamedText || m.text
             m.text ||= controller.signal.aborted
               ? '已停止。'

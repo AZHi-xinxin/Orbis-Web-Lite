@@ -1,6 +1,7 @@
 import { assetUrl } from './assets.js'
 import { manual } from './help.js'
 import { profileName } from './profile.js'
+import { MessageActions, UsageRecord } from './MessageFooter.js'
 import {
   defaultConversation,
   defaultGeneration,
@@ -305,7 +306,7 @@ export function App() {
     }
   }
   async function submit() {
-    if (!w || (!draft.trim() && !files.length && !thought.trim()) || busy) return
+    if (!w || (!draft.trim() && !files.length && !(thoughtOn && thought.trim())) || busy) return
     if (!secret('api')) {
       setPanel('settings')
       setNotice('请先填写 API Key，草稿已保留')
@@ -313,7 +314,7 @@ export function App() {
     }
     const text = draft,
       attachments = files,
-      thinking = thoughtOn ? thought : undefined,
+      thinking = thoughtOn && thought.trim() ? thought : undefined,
       q = quote
     setDraft('')
     setFiles([])
@@ -668,7 +669,7 @@ export function App() {
                               '引用内容不可用'}
                         </button>
                       )}
-                      {m.thought !== undefined && (
+                      {m.thought?.trim() && (
                         <details className="thought">
                           <summary>人类思考链</summary>
                           <p>{m.thought || '（为空）'}</p>
@@ -709,41 +710,23 @@ export function App() {
                           <pre>{JSON.stringify(m.calls, null, 2)}</pre>
                         </details>
                       ) : null}
-                      <div className="message-actions">
-                        <button
-                          onClick={() => {
+                      {(m.text || m.role === 'user') && <MessageActions
+                        message={m}
+                        disabled={busy}
+                        quote={() => {
                             setQuote(m.id)
                             pendingFocus.current = true
-                          }}
-                        >
-                          引用
-                        </button>
-                        <button
-                          onClick={() =>
+                        }}
+                        copy={() =>
                             void navigator.clipboard
                               .writeText(m.text)
                               .then(() => setNotice('已复制'))
                               .catch(fail)
-                          }
-                        >
-                          复制
-                        </button>
-                        {m.role === 'user' && !m.event && (
-                          <button disabled={busy} onClick={() => void revoke(m)}>
-                            撤回
-                          </button>
-                        )}
-                        {m.role === 'assistant' && m.text && (
-                          <button onClick={() => void speak(m.text)}>朗读</button>
-                        )}
-                        <small>
-                          {m.status === 'stopped'
-                            ? '已停止'
-                            : m.status === 'error'
-                              ? '请求未完成'
-                              : ''}
-                        </small>
-                      </div>
+                        }
+                        revoke={() => void revoke(m)}
+                        speak={() => void speak(m.text)}
+                      />}
+                      {m.role === 'assistant' && m.status !== 'working' && <UsageRecord message={m}/>}
                     </>
                   )}
                 </>
@@ -775,6 +758,8 @@ export function App() {
               </div>
             )}
             {thoughtOn && (
+              <div className="human-thought-editor">
+                <div><span>人类思考链 · 会随正文发给 AI</span><button aria-label="关闭人类思考链" onClick={() => setThoughtOn(false)}>关闭 ×</button></div>
               <textarea
                 className="thought-input"
                 aria-label="人类思考链"
@@ -782,6 +767,7 @@ export function App() {
                 value={thought}
                 onChange={(e) => setThought(e.target.value)}
               />
+              </div>
             )}
             {files.length > 0 && (
               <div className="file-chips">
@@ -828,8 +814,10 @@ export function App() {
                 className={'human-thought ' + (thoughtOn ? 'enabled' : '')}
                 onClick={() => setThoughtOn((x) => !x)}
                 aria-pressed={thoughtOn}
+                aria-label="人类思考链"
+                title={thoughtOn ? '点击关闭人类思考链' : '点击开启人类思考链'}
               >
-                思考链
+                人类思考 · {thoughtOn ? '开' : '关'}
               </button>
               <button
                 className="voice-button"
@@ -1344,6 +1332,11 @@ export function App() {
                 </p>
                 <button onClick={() => setPanel('mcp')}>连接 MCP 与选择工具 →</button>
                 <h3>聊天外观</h3>
+                <label className="toggle">
+                  <input type="checkbox" checked={thoughtOn} onChange={e => setThoughtOn(e.target.checked)}/>
+                  启用人类思考链（当前窗口）
+                </label>
+                <p className="subtle">也可在输入框旁切换，或点思考输入区的「关闭」。关闭保留草稿，但新消息不会附带它；已发送的思考记录保留。</p>
                 <label>界面主题<select aria-label="界面主题" value={appearance} onChange={e => { const value = e.target.value as 'orbis' | 'deepseek'; void change(s => { s.settings.appearance = value }) }}><option value="deepseek">DeepSeek · 简约蓝（仿官端）</option><option value="orbis">Orbis · 星夜</option></select></label>
                 <p className="subtle">简约蓝沿用 Orbis 的仿官端配色；这里只切换外观，模型和记忆保持不变。此网页由 Orbis 提供。</p>
                 <label>显示模式<select aria-label="显示模式" value={colorMode} onChange={e => { const value = e.target.value as 'light' | 'dark' | 'system'; void change(s => { s.settings.colorMode = value; s.settings.dark = value === 'dark' }) }}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">夜间</option></select></label>
