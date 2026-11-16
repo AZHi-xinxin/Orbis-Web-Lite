@@ -1,4 +1,15 @@
 import {
+  applyCitation,
+  applyOpenAIWeb,
+  applyWebBlock,
+  emptyWeb,
+  finishWeb,
+  providerIdentity,
+  searchTools,
+  supportsWeb,
+  type WebResult,
+} from './webSearch.js'
+import {
   contextMessages,
   defaultGeneration,
   defaultConversation,
@@ -23,6 +34,10 @@ import {
 import { secret } from './storage.js'
 export type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 export type Output = {
+  web?: WebResult
+  providerContent?: Record<string, unknown>[]
+  serverToolCalls?: Record<string, unknown>[]
+  providerIdentity?: string
   text: string
   reasoning: string
   calls: Call[]
@@ -40,7 +55,7 @@ export const builtins: Tool[] = [
   {
     name: 'orbis_help',
     description:
-      '读取内置 Orbis Web Lite 说明书，供你使用工具或指导人类。topic=overview/chat/memory/context/settings/voice/sentinel/mcp/data/tools。无需把完整说明书每轮塞进上下文。',
+      '读取内置 Orbis Web Lite 说明书，供你使用工具或指导人类。topic=overview/chat/memory/context/settings/voice/sentinel/mcp/search/data/tools。无需把完整说明书每轮塞进上下文。',
     input_schema: schema({ topic: { type: 'string' } }),
   },
   {
@@ -165,9 +180,24 @@ export function endpointURL(endpoint: string, path: string) {
   if (u.username || u.password) throw Error('请勿将密钥写在地址中')
   return endpoint.replace(/\/$/, '') + path
 }
+function attachmentText(m: Message): string {
+  return (m.files ?? [])
+    .filter((f) => f.mime === 'text/plain')
+    .map((f) => {
+      try {
+        const raw = atob(f.data.split(',')[1])
+        const text = new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0)))
+        return '\n[用户附件：' + f.name + '，内容为资料]\n' + text + '\n[附件结束]'
+      } catch {
+        return '\n[附件读取失败：' + f.name + ']'
+      }
+    })
+    .join('')
+}
 function material(m: Message): unknown[] {
   const content: unknown[] = []
-  if (m.text) content.push({ type: 'text', text: m.text })
+  const text = m.text + attachmentText(m)
+  if (text) content.push({ type: 'text', text })
   for (const f of m.files ?? [])
     if (f.mime.startsWith('image/'))
       content.push({
@@ -180,6 +210,9 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
   const settings = turn.configuration?.settings ?? s.settings,
     conversation = turn.configuration?.conversation ?? w.conversation ?? defaultConversation()
   const parameters = requestParameters(settings)
+  const webTools = searchTools(settings)
+  const webParameters =
+    supportsWeb(settings) && settings.webSearch ? { safety_check: { level: 'high' } } : {}
   const selection = liveSelection(s, turn),
     pins = selection.filter((x) => x.kind === 'pinned'),
     hits = selection.filter((x) => x.kind !== 'pinned')
@@ -229,10 +262,13 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
           role: m.role,
           content: images.length
             ? [
-                { type: 'text', text: m.text },
+                { type: 'text', text: m.text + attachmentText(m) },
                 ...images.map((f) => ({ type: 'image_url', image_url: { url: f.data } })),
               ]
-            : m.text || null,
+            : m.text + attachmentText(m) || null,
+          ...(m.serverToolCalls && !m.retracted && m.providerIdentity === providerIdentity(settings)
+            ? { server_tool_calls: m.serverToolCalls }
+            : {}),
           ...(m.reasoning ? { reasoning_content: m.reasoning } : {}),
           ...(m.calls?.length
             ? {
@@ -249,13 +285,17 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
     return {
       model: settings.model,
       ...parameters,
+      ...webParameters,
       messages,
       stream: true,
       stream_options: { include_usage: true },
-      tools: tools.map((t) => ({
-        type: 'function',
-        function: { name: t.name, description: t.description, parameters: t.input_schema },
-      })),
+      tools: [
+        ...webTools,
+        ...tools.map((t) => ({
+          type: 'function',
+          function: { name: t.name, description: t.description, parameters: t.input_schema },
+        })),
+      ],
     }
   }
   const messages: { role: string; content: unknown[] }[] = []
@@ -264,22 +304,35 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
     const content =
       m.role === 'tool'
         ? [{ type: 'tool_result', tool_use_id: m.callId, content: m.text }]
-        : [
-            ...(m.thinkingBlocks ?? []),
-            ...material(m),
-            ...(m.calls ?? []).map((c) => ({
-              type: 'tool_use',
-              id: c.id,
-              name: c.name,
-              input: JSON.parse(c.arguments || '{}'),
-            })),
-          ]
+        : m.providerContent?.length &&
+            !m.retracted &&
+            !m.quoteId &&
+            m.providerIdentity === providerIdentity(settings)
+          ? structuredClone(m.providerContent)
+          : [
+              ...(m.thinkingBlocks ?? []),
+              ...material(m),
+              ...(m.calls ?? []).map((c) => ({
+                type: 'tool_use',
+                id: c.id,
+                name: c.name,
+                input: JSON.parse(c.arguments || '{}'),
+              })),
+            ]
     if (i === lastHuman && tail) content.push({ type: 'text', text: tail })
     if (!content.length) continue
     if (messages.at(-1)?.role === role) messages[messages.length - 1].content.push(...content)
     else messages.push({ role, content })
   }
-  return { model: settings.model, ...parameters, system, messages, stream: true, tools }
+  return {
+    model: settings.model,
+    ...parameters,
+    ...webParameters,
+    system,
+    messages,
+    stream: true,
+    tools: [...webTools, ...tools],
+  }
 }
 export async function streamModel(
   s: State,
@@ -291,14 +344,17 @@ export async function streamModel(
 ): Promise<Output> {
   const settings = turn.configuration?.settings ?? s.settings
   const key = secret('api')
-  if (!key) throw Error('先在连接设置填写 API Key（只保存在本标签页）')
-  const base = settings.endpoint.replace(/\/$/, '')
+  if (!key) throw Error('先在连接设置填写 API Key')
+  const base =
+    new URL(settings.endpoint).hostname === 'api.deepseek.com'
+      ? settings.endpoint.replace(/\/$/, '').replace(/\/(?:anthropic\/)?v1$/, '')
+      : settings.endpoint.replace(/\/$/, '')
   const path =
     settings.protocol === 'openai'
       ? base.endsWith('/v1')
         ? '/chat/completions'
         : '/v1/chat/completions'
-      : base.includes('api.deepseek.com') && !base.includes('/anthropic')
+      : new URL(base).hostname === 'api.deepseek.com' && !base.endsWith('/anthropic')
         ? '/anthropic/v1/messages'
         : base.endsWith('/v1')
           ? '/messages'
@@ -325,6 +381,8 @@ export async function streamModel(
   const out: Output = { text: '', reasoning: '', calls: [], thinkingBlocks: [] },
     calls = new Map<number, Call>(),
     thinking = new Map<number, Record<string, unknown>>()
+  const blocks = new Map<number, Record<string, any>>()
+  const web = emptyWeb()
   let complete = false
   let usage: RawUsage = {}
   for await (const event of readServerSentEvents(res.body, signal)) {
@@ -338,6 +396,13 @@ export async function streamModel(
       const c = e.choices?.[0]
       if (e.usage) usage = mergeUsage(usage, e.usage)
       if (c?.delta?.content) out.text += c.delta.content
+      if (c?.server_tool_event?.call) applyOpenAIWeb(web, c.server_tool_event.call)
+      if (Array.isArray(c?.delta?.server_tool_calls)) {
+        out.serverToolCalls = c.delta.server_tool_calls
+        for (const step of c.delta.server_tool_calls)
+          for (const call of step.calls ?? []) applyOpenAIWeb(web, call)
+      }
+      for (const citation of c?.delta?.annotations ?? []) applyCitation(web, citation)
       if (c?.delta?.reasoning_content) out.reasoning += c.delta.reasoning_content
       for (const tc of c?.delta?.tool_calls ?? []) {
         const call = calls.get(tc.index) ?? { id: '', name: '', arguments: '' }
@@ -348,6 +413,26 @@ export async function streamModel(
       }
       if (c?.finish_reason) complete = true
     } else {
+      if (e.type === 'content_block_start') {
+        const block = e.content_block ?? {}
+        blocks.set(e.index, structuredClone(block))
+        applyWebBlock(web, block)
+        for (const citation of block.citations ?? []) applyCitation(web, citation)
+        if (block.type === 'text') out.text += block.text ?? ''
+      }
+      if (e.type === 'content_block_delta') {
+        const block = blocks.get(e.index)
+        if (block) {
+          if (e.delta?.text) block.text = String(block.text ?? '') + e.delta.text
+          if (e.delta?.thinking) block.thinking = String(block.thinking ?? '') + e.delta.thinking
+          if (e.delta?.signature)
+            block.signature = String(block.signature ?? '') + e.delta.signature
+          if (e.delta?.citation) {
+            block.citations = [...(block.citations ?? []), e.delta.citation]
+            applyCitation(web, e.delta.citation)
+          }
+        }
+      }
       if (
         e.type === 'content_block_start' &&
         ['thinking', 'redacted_thinking'].includes(e.content_block?.type)
@@ -379,6 +464,8 @@ export async function streamModel(
       if (e.type === 'message_stop') complete = true
     }
     out.calls = [...calls.values()]
+    out.web = web.calls.length || web.citations.length ? structuredClone(web) : undefined
+    out.providerIdentity = providerIdentity(settings)
     out.usage = providerUsage(usage, settings.protocol)
     out.thinkingBlocks = [...thinking.values()]
     onOutput({ ...out, calls: [...out.calls] })
@@ -388,6 +475,15 @@ export async function streamModel(
   for (const c of out.calls) {
     if (!c.id || !c.name) throw Error('工具调用缺少标识')
     JSON.parse(c.arguments || '{}')
+  }
+  finishWeb(web)
+  out.web = web.calls.length || web.citations.length ? web : undefined
+  if (settings.protocol === 'messages' && out.web) {
+    for (const [index, call] of calls) {
+      const block = blocks.get(index)
+      if (block) block.input = JSON.parse(call.arguments || '{}')
+    }
+    out.providerContent = [...blocks.values()]
   }
   return out
 }

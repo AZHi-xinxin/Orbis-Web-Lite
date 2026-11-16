@@ -12,7 +12,19 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Markdown } from '../components/markdown/Markdown.js'
 import { startRecording, type Recording } from '../services/speech/recorder.js'
-import { transcribe } from '../services/api/speech.js'
+import {
+  prepareSpeech,
+  releaseSpeech,
+  speakText,
+  speechCredential,
+  speechSettings,
+  stopSpeech,
+  transcribeSpeech,
+} from './speech.js'
+import { SpeechPanel } from './SpeechPanel.js'
+import { KeyStorageChoice, StoragePanel } from './StoragePanel.js'
+import { SearchResults } from './SearchResults.js'
+import { supportsWeb } from './webSearch.js'
 import { bubbles } from './bubbles.js'
 import {
   claimSentinels,
@@ -32,7 +44,6 @@ import {
   type Mode,
   type State,
 } from './core.js'
-import { download, fullBackup, restoreBackup, universalChat } from './backup.js'
 import { connectMcp } from './network.js'
 import { generate, stopGeneration } from './runtime.js'
 import { acquire, readState, saveSecret, secret, transact } from './storage.js'
@@ -43,7 +54,16 @@ const modes: Record<Mode, string> = {
   independent: '独立 · 跨窗充分',
 }
 const styles = { silk: '云绸', glass: '星雾', stars: '星芒', book: '书页' }
-type Panel = 'none' | 'memory' | 'context' | 'settings' | 'mcp' | 'sentinel' | 'backup' | 'help' | 'profile'
+type Panel =
+  | 'none'
+  | 'memory'
+  | 'context'
+  | 'settings'
+  | 'mcp'
+  | 'sentinel'
+  | 'backup'
+  | 'help'
+  | 'profile'
 const bytes = (n: number) =>
   n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.ceil(n / 1024) + ' KB'
 const base64 = (file: Blob) =>
@@ -70,7 +90,14 @@ export function App() {
     [noteQuery, setNoteQuery] = useState(''),
     [recording, setRecording] = useState(false),
     [voiceBusy, setVoiceBusy] = useState(false),
-    [call, setCall] = useState(false)
+    [call, setCall] = useState(false),
+    [voicePhase, setVoicePhase] = useState(''),
+    [attachmentsOpen, setAttachmentsOpen] = useState(false)
+  const voiceRequest = useRef<AbortController | null>(null),
+    recordingPending = useRef(false),
+    recordingGeneration = useRef(0),
+    recordingWindow = useRef(''),
+    autoEndTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const recordingRef = useRef<Recording | null>(null),
     callRef = useRef(false),
     listRef = useRef<HTMLDivElement>(null),
@@ -99,17 +126,22 @@ export function App() {
     if (profileSaving) return
     setProfileSaving(true)
     try {
-      const r = await transact(s => {
+      const r = await transact((s) => {
         s.settings.userName = profileName(profileDraft)
         s.settings.userNameVisibleToAI = profileVisible
       })
       setState(r.state)
       setPanel('none')
       setNotice('称呼已保存')
-    } catch (e) { fail(e) }
-    finally { setProfileSaving(false) }
+    } catch (e) {
+      fail(e)
+    } finally {
+      setProfileSaving(false)
+    }
   }
-  const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  const [systemDark, setSystemDark] = useState(
+    () => matchMedia('(prefers-color-scheme: dark)').matches
+  )
   const appearance = state.settings.appearance ?? 'orbis'
   const colorMode = state.settings.colorMode ?? (state.settings.dark ? 'dark' : 'light')
   const dark = colorMode === 'system' ? systemDark : colorMode === 'dark'
@@ -120,7 +152,6 @@ export function App() {
     if (!pendingChanges.current) commitState((old) => (next.revision >= old.revision ? next : old))
   }
   const [help, setHelp] = useState('overview')
-  const [importFile, setImportFile] = useState<File | null>(null)
   const w = state.windows.find((w) => w.id === active) ?? state.windows[0],
     used = w
       ? tokens(
@@ -184,7 +215,10 @@ export function App() {
       window.removeEventListener('orbis-change', handler)
       clearInterval(timer)
       recordingRef.current?.cancel()
-      speechSynthesis?.cancel()
+      clearVoiceTimer()
+      voiceRequest.current?.abort()
+      recordingGeneration.current++
+      releaseSpeech()
       stopGeneration()
     }
   }, [])
@@ -197,7 +231,12 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.orbisTheme = dark ? 'dark' : 'light'
     document.documentElement.dataset.appearance = appearance
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', deepseek ? (dark ? '#1a1a1a' : '#ffffff') : (dark ? '#171f1c' : '#f5f2ec'))
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute(
+        'content',
+        deepseek ? (dark ? '#1a1a1a' : '#ffffff') : dark ? '#171f1c' : '#f5f2ec'
+      )
   }, [dark, appearance])
   useLayoutEffect(() => {
     if (!w) return
@@ -347,83 +386,200 @@ export function App() {
         if (f.size > 15 * 1048576) throw Error('每份附件上限 15 MB')
         if (f.type.startsWith('image/'))
           next.push({ id: uid(), name: f.name, mime: f.type, data: await base64(f), size: f.size })
-        else throw Error('当前实验版先支持图片；文本可粘贴发送')
+        else if (
+          f.type.startsWith('text/') ||
+          /\.(txt|md|csv|json|log|js|ts|py|html|css|xml|yaml|yml)$/i.test(f.name)
+        ) {
+          if (f.size > 2 * 1048576) throw Error('文本附件暂支持 2 MiB 以内，请分段发送较大文件')
+          const blob = new Blob([await f.text()], { type: 'text/plain' })
+          next.push({
+            id: uid(),
+            name: f.name,
+            mime: 'text/plain',
+            data: await base64(blob),
+            size: blob.size,
+          })
+        } else throw Error('目前支持图片和文本/代码文件；PDF、Word 等请先导出为文本')
       }
       setFiles((old) => [...old, ...next])
+      setAttachmentsOpen(false)
     } catch (e) {
       fail(e)
     }
   }
+  function clearVoiceTimer() {
+    if (autoEndTimer.current) clearInterval(autoEndTimer.current)
+    autoEndTimer.current = null
+  }
+  function hangup() {
+    callRef.current = false
+    setCall(false)
+    recordingGeneration.current++
+    recordingWindow.current = ''
+    clearVoiceTimer()
+    voiceRequest.current?.abort()
+    voiceRequest.current = null
+    recordingRef.current?.cancel()
+    recordingRef.current = null
+    setRecording(false)
+    setVoiceBusy(false)
+    setVoicePhase('')
+    stopSpeech()
+    stopGeneration()
+  }
+  useEffect(() => {
+    if (
+      (callRef.current ||
+        recordingRef.current ||
+        voiceRequest.current ||
+        recordingPending.current) &&
+      recordingWindow.current &&
+      active &&
+      recordingWindow.current !== active
+    )
+      hangup()
+  }, [active])
   async function beginRecord() {
+    if (recordingPending.current || recordingRef.current || !w) return
+    const generation = ++recordingGeneration.current
+    recordingPending.current = true
+    recordingWindow.current = w.id
     try {
+      speechCredential(state.settings, 'asr')
       const r = await startRecording(() => void finishRecord())
+      if (generation !== recordingGeneration.current) {
+        r.cancel()
+        return
+      }
       recordingRef.current = r
       setRecording(true)
+      setVoicePhase('正在听')
+      if (callRef.current && speechSettings(state.settings).autoSend) {
+        const samples = new Float32Array(r.analyser.fftSize)
+        let heard = false,
+          voiced = 0,
+          lastSpeech = performance.now()
+        autoEndTimer.current = setInterval(() => {
+          if (recordingRef.current !== r) {
+            clearVoiceTimer()
+            return
+          }
+          r.analyser.getFloatTimeDomainData(samples)
+          const rms = Math.sqrt(samples.reduce((sum, x) => sum + x * x, 0) / samples.length)
+          if (rms > 0.018) {
+            voiced += 100
+            lastSpeech = performance.now()
+            if (voiced >= 300) heard = true
+          }
+          if (heard && performance.now() - lastSpeech > 1400) {
+            clearVoiceTimer()
+            void finishRecord()
+          }
+        }, 100)
+      }
     } catch (e) {
-      setCall(false)
-      callRef.current = false
+      hangup()
       fail(e)
+    } finally {
+      recordingPending.current = false
     }
   }
   async function finishRecord() {
-    const r = recordingRef.current
-    if (!r || !w) return
+    const r = recordingRef.current,
+      windowId = recordingWindow.current,
+      generation = recordingGeneration.current
+    if (!r || !windowId) return
     recordingRef.current = null
+    clearVoiceTimer()
     setRecording(false)
     setVoiceBusy(true)
+    setVoicePhase('正在转写')
+    const controller = new AbortController()
+    voiceRequest.current = controller
     try {
       const blob = await r.stop()
       if (!blob) throw Error('没有录到声音')
-      const text = await transcribe(secret('api'), blob)
-      const f: Attachment = {
+      const latestSettings = (await readState()).settings
+      const text = await transcribeSpeech(latestSettings, blob, controller.signal)
+      if (controller.signal.aborted || generation !== recordingGeneration.current) return
+      const file: Attachment = {
         id: uid(),
         name: '语音.wav',
         mime: 'audio/wav',
         data: await base64(blob),
         size: blob.size,
       }
-      await send(w.id, text, [f])
-      if (callRef.current) {
+      if (controller.signal.aborted || generation !== recordingGeneration.current) return
+      setVoicePhase('正在回复')
+      const ok = await send(windowId, text, [file])
+      if (
+        ok &&
+        callRef.current &&
+        !controller.signal.aborted &&
+        generation === recordingGeneration.current
+      ) {
         const latest = await readState()
-        const reply = windowOf(latest, w.id)
-          .messages.filter((m) => m.role === 'assistant' && !m.calls?.length && !m.retracted)
+        const reply = windowOf(latest, windowId)
+          .messages.filter(
+            (m) => m.role === 'assistant' && !m.calls?.length && !m.retracted && m.status === 'done'
+          )
           .at(-1)
         if (reply?.text) {
-          await speak(reply.text)
-          if (callRef.current) await beginRecord()
+          setVoicePhase('准备朗读')
+          try {
+            await speakText(reply.text, latest.settings, controller.signal, () =>
+              setVoicePhase('正在说')
+            )
+          } catch (e) {
+            if (!(e instanceof DOMException && e.name === 'AbortError')) throw e
+          }
         }
-      }
+        if (
+          callRef.current &&
+          !controller.signal.aborted &&
+          generation === recordingGeneration.current
+        )
+          await beginRecord()
+      } else if (callRef.current && !ok) hangup()
     } catch (e) {
-      fail(e)
-      callRef.current = false
-      setCall(false)
+      if (!controller.signal.aborted) {
+        hangup()
+        fail(e)
+      }
     } finally {
-      setVoiceBusy(false)
+      if (voiceRequest.current === controller) {
+        voiceRequest.current = null
+        setVoiceBusy(false)
+        if (!callRef.current) setVoicePhase('')
+      }
     }
   }
-  function speak(text: string): Promise<void> {
-    return new Promise((resolve) => {
-      speechSynthesis.cancel()
-      const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'zh-CN'
-      u.onend = () => resolve()
-      u.onerror = () => resolve()
-      speechSynthesis.speak(u)
-    })
+  async function speak(text: string): Promise<void> {
+    try {
+      prepareSpeech()
+      await speakText(text, state.settings)
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) fail(e)
+    }
   }
   async function toggleCall() {
     if (callRef.current) {
-      callRef.current = false
-      setCall(false)
-      recordingRef.current?.cancel()
-      recordingRef.current = null
-      setRecording(false)
-      speechSynthesis.cancel()
-      stopGeneration()
+      hangup()
       return
     }
+    if (busy || voiceBusy || recordingPending.current || recordingRef.current) return
     if (!secret('api')) {
       setPanel('settings')
+      return
+    }
+    try {
+      speechCredential(state.settings, 'asr')
+      if (speechSettings(state.settings).ttsProvider === 'deepseek')
+        speechCredential(state.settings, 'tts')
+      prepareSpeech()
+    } catch (e) {
+      setPanel('settings')
+      fail(e)
       return
     }
     callRef.current = true
@@ -500,7 +656,9 @@ export function App() {
     <div className={'orbis ' + state.settings.style + (deepseek ? ' deepseek' : '')}>
       <aside className={'sidebar ' + (drawer ? 'open' : '')}>
         <div className="brand">
-          <span className="orb">{deepseek ? <img src={assetUrl('deepseek.svg')} alt="" /> : '✦'}</span>
+          <span className="orb">
+            {deepseek ? <img src={assetUrl('deepseek.svg')} alt="" /> : '✦'}
+          </span>
           <div>
             Orbis <small>WEB LITE · 实验版</small>
           </div>
@@ -509,20 +667,44 @@ export function App() {
           </button>
         </div>
         <button className="user-profile" onClick={openProfile} aria-label="修改我的称呼">
-          <span className="profile-avatar" aria-hidden="true">{Array.from(humanName)[0] || '○'}</span>
-          <span><strong>{humanName || '设置你的称呼'}</strong><small>欢迎回家 · 修改称呼</small></span>
+          <span className="profile-avatar" aria-hidden="true">
+            {Array.from(humanName)[0] || '○'}
+          </span>
+          <span>
+            <strong>{humanName || '设置你的称呼'}</strong>
+            <small>欢迎回家 · 修改称呼</small>
+          </span>
           <span aria-hidden="true">✎</span>
         </button>
         <button disabled={switching} className="new-window" onClick={() => void addWindow()}>
           ＋ 开一个新窗口
         </button>
         <label className="window-search">
-          <span aria-hidden="true">⌕</span><input aria-label="搜索对话" placeholder="搜索对话内容…" value={windowQuery} onChange={e => setWindowQuery(e.target.value)} />
+          <span aria-hidden="true">⌕</span>
+          <input
+            aria-label="搜索对话"
+            placeholder="搜索对话内容…"
+            value={windowQuery}
+            onChange={(e) => setWindowQuery(e.target.value)}
+          />
         </label>
         <div className="section-caption">{windowQuery ? '搜索结果' : '最近对话'}</div>
         <nav className="windows">
           {[...state.windows]
-            .filter(x => !windowQuery.trim() || (x.title + '\n' + x.messages.filter(m => !m.retracted).map(m => m.text).join('\n')).toLocaleLowerCase().includes(windowQuery.trim().toLocaleLowerCase()))
+            .filter(
+              (x) =>
+                !windowQuery.trim() ||
+                (
+                  x.title +
+                  '\n' +
+                  x.messages
+                    .filter((m) => !m.retracted)
+                    .map((m) => m.text)
+                    .join('\n')
+                )
+                  .toLocaleLowerCase()
+                  .includes(windowQuery.trim().toLocaleLowerCase())
+            )
             .sort((a, b) => b.at - a.at)
             .map((x) => (
               <button
@@ -559,17 +741,47 @@ export function App() {
       <main>
         <header>
           <button className="mobile-only" onClick={() => setDrawer(true)} aria-label="打开窗口列表">
-            <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M4 7h16M4 16h10" /></svg>
+            <svg
+              viewBox="0 0 24 24"
+              width="25"
+              height="25"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              aria-hidden="true"
+            >
+              <path d="M4 7h16M4 16h10" />
+            </svg>
           </button>
           <div className="identity">
-            <span className="avatar">{deepseek ? <img src={assetUrl('deepseek.svg')} alt="" /> : '✦'}</span>
+            <span className="avatar">
+              {deepseek ? <img src={assetUrl('deepseek.svg')} alt="" /> : '✦'}
+            </span>
             <div>
               <strong>{state.settings.name}</strong>
               <small>{w?.title}</small>
             </div>
           </div>
           <div className="header-actions">
-            <button className="header-new" onClick={() => void addWindow()} disabled={switching} aria-label="新建对话"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-4.7A8.5 8.5 0 1 1 20 11.5Z"/><path d="M8 11.5h8M12 7.5v8"/></svg></button>
+            <button
+              className="header-new"
+              onClick={() => void addWindow()}
+              disabled={switching}
+              aria-label="新建对话"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="24"
+                height="24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <path d="M20 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-4.7A8.5 8.5 0 1 1 20 11.5Z" />
+                <path d="M8 11.5h8M12 7.5v8" />
+              </svg>
+            </button>
             <button
               className="budget"
               onClick={() => setPanel('context')}
@@ -619,16 +831,39 @@ export function App() {
           </select>
           <span>{w.mode === 'light' ? '存查仅限本窗口' : '同一记忆库 · 可随时存查'}</span>
         </div>
-        <div className={"messages" + (!shown.length ? " is-empty" : "")} ref={listRef}>
+        <div className={'messages' + (!shown.length ? ' is-empty' : '')} ref={listRef}>
           {!state.settings.tutorialSeen && (
-            <div className="first-guide"><button onClick={() => setPanel('help')}>第一次使用？查看连接与记忆指引 ↗</button><button aria-label="收起入门提示" onClick={() => void change(s => { s.settings.tutorialSeen = true })}>×</button></div>
+            <div className="first-guide">
+              <button onClick={() => setPanel('help')}>第一次使用？查看连接与记忆指引 ↗</button>
+              <button
+                aria-label="收起入门提示"
+                onClick={() =>
+                  void change((s) => {
+                    s.settings.tutorialSeen = true
+                  })
+                }
+              >
+                ×
+              </button>
+            </div>
           )}
           {!shown.length && (
             <div className="welcome">
-              <div className="welcome-orb">{deepseek ? <img src={assetUrl('deepseek.svg')} alt="DeepSeek" /> : '✦'}</div>
+              <div className="welcome-orb">
+                {deepseek ? <img src={assetUrl('deepseek.svg')} alt="DeepSeek" /> : '✦'}
+              </div>
               <h1>{humanName ? `${humanName}，欢迎回家` : '欢迎回家'}</h1>
-              {!humanName && <button className="welcome-profile" onClick={openProfile}>告诉 Orbis 怎么称呼你</button>}
-              {!deepseek && <div className="suggestions"><button onClick={() => setDraft('请把这件事存进记忆库：')}>记住一件事 ↗</button><button onClick={() => setPanel('memory')}>看看记忆库 ↗</button></div>}
+              {!humanName && (
+                <button className="welcome-profile" onClick={openProfile}>
+                  告诉 Orbis 怎么称呼你
+                </button>
+              )}
+              {!deepseek && (
+                <div className="suggestions">
+                  <button onClick={() => setDraft('请把这件事存进记忆库：')}>记住一件事 ↗</button>
+                  <button onClick={() => setPanel('memory')}>看看记忆库 ↗</button>
+                </div>
+              )}
             </div>
           )}
           {shown.map((m) => (
@@ -681,8 +916,11 @@ export function App() {
                           <p>{m.reasoning}</p>
                         </details>
                       )}
-                      {bubbles(m.text, state.settings.split && m.role === 'assistant').filter(part => part.trim() || (m.status === 'working' && !m.calls?.length)).map(
-                        (part, i) => (
+                      {bubbles(m.text, state.settings.split && m.role === 'assistant')
+                        .filter(
+                          (part) => part.trim() || (m.status === 'working' && !m.calls?.length)
+                        )
+                        .map((part, i) => (
                           <div className="bubble" key={i}>
                             {part ? (
                               <Markdown
@@ -695,8 +933,7 @@ export function App() {
                               <span className="typing">正在思考 ···</span>
                             ) : null}
                           </div>
-                        )
-                      )}
+                        ))}
                       {m.files?.map((f) =>
                         f.mime.startsWith('image/') ? (
                           <img className="attachment" key={f.id} src={f.data} alt={f.name} />
@@ -704,29 +941,34 @@ export function App() {
                           <audio key={f.id} controls src={f.data} />
                         ) : null
                       )}
+                      <SearchResults message={m} />
                       {m.calls?.length ? (
                         <details className="tool">
                           <summary>◇ {m.calls.map((c) => c.name).join('、')}</summary>
                           <pre>{JSON.stringify(m.calls, null, 2)}</pre>
                         </details>
                       ) : null}
-                      {(m.text || m.role === 'user') && <MessageActions
-                        message={m}
-                        disabled={busy}
-                        quote={() => {
+                      {(m.text || m.role === 'user') && (
+                        <MessageActions
+                          message={m}
+                          disabled={busy}
+                          quote={() => {
                             setQuote(m.id)
                             pendingFocus.current = true
-                        }}
-                        copy={() =>
+                          }}
+                          copy={() =>
                             void navigator.clipboard
                               .writeText(m.text)
                               .then(() => setNotice('已复制'))
                               .catch(fail)
-                        }
-                        revoke={() => void revoke(m)}
-                        speak={() => void speak(m.text)}
-                      />}
-                      {m.role === 'assistant' && m.status !== 'working' && <UsageRecord message={m}/>}
+                          }
+                          revoke={() => void revoke(m)}
+                          speak={() => void speak(m.text)}
+                        />
+                      )}
+                      {m.role === 'assistant' && m.status !== 'working' && (
+                        <UsageRecord message={m} />
+                      )}
                     </>
                   )}
                 </>
@@ -745,9 +987,35 @@ export function App() {
           )}
           {call && (
             <div className="call-bar">
-              ◉ 前台语音通话 ·{' '}
-              {recording ? '正在听，点击结束本句后发送' : busy ? '正在回复' : '准备下一句'}
+              ◉ 前台语音通话 · {voicePhase || (recording ? '正在听' : '准备下一句')}
+              {recording && <button onClick={() => void finishRecord()}>结束本句</button>}
+              {voicePhase === '正在说' && (
+                <button
+                  onClick={() => {
+                    stopSpeech()
+                    setVoicePhase('准备下一句')
+                  }}
+                >
+                  打断朗读
+                </button>
+              )}
               <button onClick={() => void toggleCall()}>挂断</button>
+            </div>
+          )}
+          {!state.settings.storageNoticeSeen && (
+            <div className="storage-reminder">
+              <span>聊天与配置只存在此打开方式。清除“网站数据”会删除资料。</span>
+              <button onClick={() => setPanel('backup')}>清理前看这里</button>
+              <button
+                aria-label="关闭本地存储提醒"
+                onClick={() =>
+                  void change((s) => {
+                    s.settings.storageNoticeSeen = true
+                  })
+                }
+              >
+                ×
+              </button>
             </div>
           )}
           <div className="composer">
@@ -759,14 +1027,19 @@ export function App() {
             )}
             {thoughtOn && (
               <div className="human-thought-editor">
-                <div><span>人类思考链 · 会随正文发给 AI</span><button aria-label="关闭人类思考链" onClick={() => setThoughtOn(false)}>关闭 ×</button></div>
-              <textarea
-                className="thought-input"
-                aria-label="人类思考链"
-                placeholder="人类思考链（选填，会和正文一起发给 AI）"
-                value={thought}
-                onChange={(e) => setThought(e.target.value)}
-              />
+                <div>
+                  <span>人类思考链 · 会随正文发给 AI</span>
+                  <button aria-label="关闭人类思考链" onClick={() => setThoughtOn(false)}>
+                    关闭 ×
+                  </button>
+                </div>
+                <textarea
+                  className="thought-input"
+                  aria-label="人类思考链"
+                  placeholder="人类思考链（选填，会和正文一起发给 AI）"
+                  value={thought}
+                  onChange={(e) => setThought(e.target.value)}
+                />
               </div>
             )}
             {files.length > 0 && (
@@ -784,7 +1057,7 @@ export function App() {
             <textarea
               disabled={switching}
               aria-label="输入消息"
-              placeholder={deepseek ? "发消息，或点击语音说话" : "想说的话，慢慢说…"}
+              placeholder={deepseek ? '发消息，或点击语音说话' : '想说的话，慢慢说…'}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -800,16 +1073,71 @@ export function App() {
               }}
             />
             <div className="composer-tools">
-              {deepseek && <button className={'reasoning-toggle ' + (options.reasoning !== 'off' ? 'enabled' : '')} aria-label="深度思考" aria-pressed={options.reasoning !== 'off'} onClick={() => setOption('reasoning', options.reasoning === 'off' ? 'high' : 'off')} title="切换 AI 深度思考；具体能力取决于所选模型"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(45 12 12)"/><ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(-45 12 12)"/><circle cx="12" cy="12" r="1"/></svg>深度思考</button>}
-              <label className="attach" title="添加图片" aria-label="添加图片">
-                ＋
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => void importAttachments(e.target.files)}
-                />
-              </label>
+              {deepseek && (
+                <button
+                  className={'reasoning-toggle ' + (options.reasoning !== 'off' ? 'enabled' : '')}
+                  aria-label="深度思考"
+                  aria-pressed={options.reasoning !== 'off'}
+                  onClick={() =>
+                    setOption('reasoning', options.reasoning === 'off' ? 'high' : 'off')
+                  }
+                  title="切换 AI 深度思考；具体能力取决于所选模型"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    aria-hidden="true"
+                  >
+                    <ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(45 12 12)" />
+                    <ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(-45 12 12)" />
+                    <circle cx="12" cy="12" r="1" />
+                  </svg>
+                  深度思考
+                </button>
+              )}
+              <button
+                className={'search-toggle ' + (state.settings.webSearch ? 'enabled' : '')}
+                aria-label="智能搜索"
+                aria-pressed={!!state.settings.webSearch}
+                disabled={busy || call}
+                onClick={() => {
+                  if (!state.settings.webSearch && !supportsWeb(state.settings)) {
+                    setNotice('智能搜索使用 DeepSeek 官方 deepseek-flash，请在连接设置选择')
+                    setPanel('settings')
+                    return
+                  }
+                  void change((s) => {
+                    s.settings.webSearch = !s.settings.webSearch
+                  })
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <ellipse cx="12" cy="12" rx="4" ry="9" />
+                  <path d="M3 12h18" />
+                </svg>
+                智能搜索
+              </button>
+              <button
+                className="attach-toggle"
+                aria-label="添加附件"
+                aria-expanded={attachmentsOpen}
+                onClick={() => setAttachmentsOpen((x) => !x)}
+              >
+                {attachmentsOpen ? '×' : '＋'}
+              </button>
               <button
                 className={'human-thought ' + (thoughtOn ? 'enabled' : '')}
                 onClick={() => setThoughtOn((x) => !x)}
@@ -849,9 +1177,64 @@ export function App() {
               )}
             </div>
           </div>
+          {attachmentsOpen && (
+            <div className="attachment-drawer" aria-label="选择附件类型">
+              <label>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 6h4l2-3h4l2 3h4v14H4z" />
+                  <circle cx="12" cy="12" r="4" />
+                </svg>
+                拍照
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => {
+                    void importAttachments(e.target.files)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              <label>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="3" />
+                  <circle cx="8" cy="8" r="2" />
+                  <path d="m4 19 6-6 3 3 4-5 4 5" />
+                </svg>
+                相册
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => {
+                    void importAttachments(e.target.files)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              <label>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m9 15 7-7a3 3 0 0 0-4-4l-8 8a5 5 0 0 0 7 7l9-9M7 13l8-8" />
+                </svg>
+                文件
+                <input
+                  type="file"
+                  accept="image/*,text/*,.txt,.md,.csv,.json,.log,.js,.ts,.py,.html,.css,.xml,.yaml,.yml"
+                  multiple
+                  onChange={(e) => {
+                    void importAttachments(e.target.files)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+            </div>
+          )}
           <div className="composer-foot">
-            Orbis Web Lite · 数据保存在此浏览器 ·{' '}
-            <button onClick={() => setPanel('backup')}>导出留存</button> · <a href={assetUrl('source.tar.gz')} download>源码</a>
+            Orbis Web Lite · <button onClick={() => setPanel('backup')}>本地存储与清理提醒</button>{' '}
+            · <button onClick={() => setPanel('backup')}>导出留存</button> ·{' '}
+            <a href={assetUrl('source.tar.gz')} download>
+              源码
+            </a>
           </div>
         </div>
       </main>
@@ -872,7 +1255,7 @@ export function App() {
                     settings: '连接与外观',
                     mcp: 'MCP 工具',
                     sentinel: '哨兵与主动消息',
-                    backup: '把记忆带走',
+                    backup: '本地存储与备份',
                     help: '说明书与使用教程',
                     profile: '我的称呼',
                   }[panel]
@@ -883,13 +1266,48 @@ export function App() {
               </button>
             </div>
             {panel === 'profile' && (
-              <form className="profile-form" onSubmit={e => { e.preventDefault(); void saveProfile() }}>
-                <label>你的称呼<input aria-label="你的称呼" autoFocus maxLength={120} value={profileDraft} onChange={e => setProfileDraft(e.target.value)} placeholder="想让 Orbis 怎么称呼你？" /></label>
-                <p className="profile-preview">{profileName(profileDraft) ? `${profileName(profileDraft)}，欢迎回家` : '欢迎回家'}</p>
-                <label className="toggle"><input type="checkbox" checked={profileVisible} onChange={e => setProfileVisible(e.target.checked)} />AI 可见</label>
-                <p className="hint">开启后，从下一次发消息开始，AI 就能知道你的称呼，所有窗口通用。默认关闭，仅用于页面欢迎语。</p>
-                <p className="hint">关闭后不再主动发送称呼，已经发给 AI 的聊天记录不会删除。称呼最多 60 个字，保存在此浏览器。</p>
-                <button className="primary" type="submit" disabled={profileSaving}>{profileSaving ? '保存中…' : '保存称呼'}</button>
+              <form
+                className="profile-form"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void saveProfile()
+                }}
+              >
+                <label>
+                  你的称呼
+                  <input
+                    aria-label="你的称呼"
+                    autoFocus
+                    maxLength={120}
+                    value={profileDraft}
+                    onChange={(e) => setProfileDraft(e.target.value)}
+                    placeholder="想让 Orbis 怎么称呼你？"
+                  />
+                </label>
+                <p className="profile-preview">
+                  {profileName(profileDraft)
+                    ? `${profileName(profileDraft)}，欢迎回家`
+                    : '欢迎回家'}
+                </p>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={profileVisible}
+                    onChange={(e) => setProfileVisible(e.target.checked)}
+                  />
+                  AI 可见
+                </label>
+                <p className="hint">
+                  开启后，从下一次发消息开始，AI
+                  就能知道你的称呼，所有窗口通用。默认关闭，仅用于页面欢迎语。
+                </p>
+                <p className="hint">
+                  关闭后不再主动发送称呼，已经发给 AI 的聊天记录不会删除。称呼最多 60
+                  个字，保存在此浏览器。
+                </p>
+                <button className="primary" type="submit" disabled={profileSaving}>
+                  {profileSaving ? '保存中…' : '保存称呼'}
+                </button>
               </form>
             )}
             {panel === 'help' && (
@@ -1047,7 +1465,13 @@ export function App() {
             )}
             {panel === 'settings' && (
               <>
-                <button className="profile-setting" onClick={openProfile}>我的称呼：{humanName || '未填写'} · {state.settings.userNameVisibleToAI === true && humanName ? 'AI 可见' : '仅页面显示'} →</button>
+                <button className="profile-setting" onClick={openProfile}>
+                  我的称呼：{humanName || '未填写'} ·{' '}
+                  {state.settings.userNameVisibleToAI === true && humanName
+                    ? 'AI 可见'
+                    : '仅页面显示'}{' '}
+                  →
+                </button>
                 <label>
                   AI 名称
                   <input
@@ -1321,25 +1745,72 @@ export function App() {
                     value={key}
                     placeholder="你自己的密钥"
                     onChange={(e) => {
-                      setKey(e.target.value)
-                      saveSecret('api', e.target.value)
+                      try {
+                        saveSecret('api', e.target.value)
+                        setKey(e.target.value)
+                      } catch (error) {
+                        fail(error)
+                      }
                     }}
                   />
                 </label>
+                <KeyStorageChoice fail={fail} />
                 <p className="subtle">
-                  密钥仅保存在本标签页会话中，不进入导出。接口需允许网页跨域。语音转写目前沿用
-                  DeepSeek ASR。
+                  接口需允许网页跨域。智能搜索当前支持 DeepSeek 官方
+                  deepseek-flash，开启后按服务用量计费；搜索来源会显示在回复中。
                 </p>
+                <SpeechPanel settings={state.settings} change={change} fail={fail} />
                 <button onClick={() => setPanel('mcp')}>连接 MCP 与选择工具 →</button>
                 <h3>聊天外观</h3>
                 <label className="toggle">
-                  <input type="checkbox" checked={thoughtOn} onChange={e => setThoughtOn(e.target.checked)}/>
+                  <input
+                    type="checkbox"
+                    checked={thoughtOn}
+                    onChange={(e) => setThoughtOn(e.target.checked)}
+                  />
                   启用人类思考链（当前窗口）
                 </label>
-                <p className="subtle">也可在输入框旁切换，或点思考输入区的「关闭」。关闭保留草稿，但新消息不会附带它；已发送的思考记录保留。</p>
-                <label>界面主题<select aria-label="界面主题" value={appearance} onChange={e => { const value = e.target.value as 'orbis' | 'deepseek'; void change(s => { s.settings.appearance = value }) }}><option value="deepseek">DeepSeek · 简约蓝（仿官端）</option><option value="orbis">Orbis · 星夜</option></select></label>
-                <p className="subtle">简约蓝沿用 Orbis 的仿官端配色；这里只切换外观，模型和记忆保持不变。此网页由 Orbis 提供。</p>
-                <label>显示模式<select aria-label="显示模式" value={colorMode} onChange={e => { const value = e.target.value as 'light' | 'dark' | 'system'; void change(s => { s.settings.colorMode = value; s.settings.dark = value === 'dark' }) }}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">夜间</option></select></label>
+                <p className="subtle">
+                  也可在输入框旁切换，或点思考输入区的「关闭」。关闭保留草稿，但新消息不会附带它；已发送的思考记录保留。
+                </p>
+                <label>
+                  界面主题
+                  <select
+                    aria-label="界面主题"
+                    value={appearance}
+                    onChange={(e) => {
+                      const value = e.target.value as 'orbis' | 'deepseek'
+                      void change((s) => {
+                        s.settings.appearance = value
+                      })
+                    }}
+                  >
+                    <option value="deepseek">DeepSeek · 简约蓝（仿官端）</option>
+                    <option value="orbis">Orbis · 星夜</option>
+                  </select>
+                </label>
+                <p className="subtle">
+                  简约蓝沿用 Orbis 的仿官端配色；这里只切换外观，模型和记忆保持不变。此网页由 Orbis
+                  提供。
+                </p>
+                <label>
+                  显示模式
+                  <select
+                    aria-label="显示模式"
+                    value={colorMode}
+                    onChange={(e) => {
+                      const value = e.target.value as 'light' | 'dark' | 'system'
+                      void change((s) => {
+                        s.settings.colorMode = value
+                        s.settings.dark = value === 'dark'
+                      })
+                    }}
+                  >
+                    <option value="system">跟随系统</option>
+                    <option value="light">浅色</option>
+                    <option value="dark">夜间</option>
+                  </select>
+                </label>
                 <h3>气泡样式</h3>
                 <div className="style-grid">
                   {Object.entries(styles).map(([value, label]) => (
@@ -1538,80 +2009,16 @@ export function App() {
               </>
             )}
             {panel === 'backup' && (
-              <>
-                <p>把聊天、记忆和压缩前原文保存到自己手里。</p>
-                <button
-                  className="primary"
-                  onClick={() => {
-                    try {
-                      download(
-                        'Orbis-Web-' + new Date().toISOString().slice(0, 10) + '.zip',
-                        fullBackup(state) as BlobPart,
-                        'application/zip'
-                      )
-                    } catch (e) {
-                      fail(e)
-                    }
-                  }}
-                >
-                  导出网页完整备份
-                </button>
-                <p className="subtle">
-                  包含当前网页聊天、记忆和附件。此完整包目前用于网页版恢复，安卓完整导入器仍待实现。
-                </p>
-                <button
-                  onClick={() =>
-                    download(
-                      'Orbis-通用聊天.json',
-                      JSON.stringify(universalChat(state), null, 2),
-                      'application/json'
-                    )
-                  }
-                >
-                  导出可供 Android Orbis 导入的聊天 JSON
-                </button>
-                <p className="subtle">
-                  兼容入口只带文字、思考和时间；记忆与音频原件请保留在完整备份中。
-                </p>
-                <label className="import-file">
-                  选择网页完整备份
-                  <input
-                    type="file"
-                    accept=".zip"
-                    onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-                  />
-                </label>
-                {importFile && (
-                  <div className="info">
-                    {importFile.name} · {bytes(importFile.size)}
-                    <p>追加导入，不覆盖现有窗口；相同记录跳过。哨兵不自动恢复执行。</p>
-                    <button
-                      onClick={() =>
-                        void (async () => {
-                          const data = new Uint8Array(await importFile.arrayBuffer())
-                          const r = await transact((s) => restoreBackup(s, data))
-                          setState(r.state)
-                          setNotice(`已追加 ${r.result.windows} 个窗口、${r.result.notes} 条记忆`)
-                          setImportFile(null)
-                        })().catch(fail)
-                      }
-                    >
-                      确认追加导入
-                    </button>
-                  </div>
-                )}
-                <button
-                  onClick={() =>
-                    void navigator.storage
-                      ?.persist()
-                      .then((ok) =>
-                        setNotice(ok ? '已获得持久存储许可' : '浏览器未授予持久存储，请定期导出')
-                      )
-                  }
-                >
-                  申请持久保存
-                </button>
-              </>
+              <StoragePanel
+                state={state}
+                onState={(s) => {
+                  setState(s)
+                  setKey(secret('api'))
+                }}
+                notify={setNotice}
+                fail={fail}
+                busy={busy || voiceBusy || call}
+              />
             )}
             <footer>Orbis Web Lite · 基于 DeepSeek chat-demo · AGPL-3.0 / MIT</footer>
           </section>

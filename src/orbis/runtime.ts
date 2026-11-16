@@ -18,6 +18,7 @@ import { acquire, readState, transact } from './storage.js'
 import { builtins, callMcp, enabledTools, mcpAlias, streamModel, type Output } from './network.js'
 import { conversationSettings } from './configuration.js'
 import { helpTopic } from './help.js'
+import { finishWeb, searchTools } from './webSearch.js'
 import { recall, windowNotice } from './semantic.js'
 let current: AbortController | undefined
 export const stopGeneration = () => current?.abort()
@@ -102,11 +103,13 @@ export async function generate(
   let responseId: string | undefined
   let requestStarted = 0
   let streamedUsage: Message['usage']
+  let streamedWeb: Message['web']
   let nextQuote: string | undefined
   let streamedText = '',
     streamedReasoning = ''
   const turnId = uid()
   try {
+    searchTools((await readState()).settings)
     release = await acquire(window)
     if (controller.signal.aborted) return false
     const remembered = event
@@ -140,6 +143,7 @@ export async function generate(
       responseId = uid()
       streamedText = ''
       streamedReasoning = ''
+      streamedWeb = undefined
       const id = responseId
       const start = await transact((s) => {
         windowOf(s, window).messages.push({
@@ -170,7 +174,8 @@ export async function generate(
           streamedText = o.text
           streamedReasoning = o.reasoning
           streamedUsage = o.usage
-          onStream({ ...base, text: o.text, reasoning: o.reasoning, calls: o.calls })
+          streamedWeb = o.web
+          onStream({ ...base, text: o.text, reasoning: o.reasoning, calls: o.calls, web: o.web })
         }
       )
       const saved = await transact((s) => {
@@ -181,6 +186,10 @@ export async function generate(
           reasoning: result.reasoning,
           thinkingBlocks: result.thinkingBlocks,
           calls: result.calls,
+          web: result.web,
+          providerContent: result.providerContent,
+          serverToolCalls: result.serverToolCalls,
+          providerIdentity: result.providerIdentity,
           status: 'done',
           usage: result.usage,
           elapsedMs: Math.max(0, performance.now() - requestStarted),
@@ -251,6 +260,10 @@ export async function generate(
             m.status = controller.signal.aborted ? 'stopped' : 'error'
             m.reasoning = streamedReasoning
             m.usage = streamedUsage
+            if (streamedWeb) {
+              finishWeb(streamedWeb)
+              m.web = structuredClone(streamedWeb)
+            }
             if (requestStarted) m.elapsedMs = Math.max(0, performance.now() - requestStarted)
             m.text = streamedText || m.text
             m.text ||= controller.signal.aborted

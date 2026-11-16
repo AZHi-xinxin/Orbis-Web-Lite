@@ -26,6 +26,10 @@ export type Message = {
   thinkingBlocks?: Record<string, unknown>[]
   usage?: import('./usage.js').Usage
   elapsedMs?: number
+  web?: import('./webSearch.js').WebResult
+  providerContent?: Record<string, unknown>[]
+  serverToolCalls?: Record<string, unknown>[]
+  providerIdentity?: string
 }
 export type NoteRevision = {
   revision: number
@@ -135,6 +139,9 @@ export type State = {
     semantic?: boolean
     generation?: GenerationOptions
     tutorialSeen?: boolean
+    webSearch?: boolean
+    speech?: import('./speech.js').SpeechSettings
+    storageNoticeSeen?: boolean
   }
 }
 export const uid = () => crypto.randomUUID()
@@ -665,6 +672,10 @@ export function retract(s: State, window: string, id: string, actor: 'user' | 'a
         delete copy.thought
         delete copy.reasoning
         delete copy.files
+        delete copy.thinkingBlocks
+        delete copy.providerContent
+        delete copy.serverToolCalls
+        delete copy.web
         copy.retracted = true
       }
   return { retracted: true, id }

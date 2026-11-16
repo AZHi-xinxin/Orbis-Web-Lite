@@ -65,8 +65,59 @@ export async function acquire(windowId: string): Promise<() => Promise<void>> {
     await t.done
   }
 }
-export const saveSecret = (key: string, value: string) => {
-  if (value) sessionStorage.setItem('orbis-secret:' + key, value)
-  else sessionStorage.removeItem('orbis-secret:' + key)
+const prefix = 'orbis-secret:'
+export const remembersSecrets = () => {
+  try {
+    return localStorage.getItem('orbis-remember-secrets') === '1'
+  } catch {
+    return false
+  }
 }
-export const secret = (key: string) => sessionStorage.getItem('orbis-secret:' + key) ?? ''
+export const secret = (key: string) => {
+  if (remembersSecrets()) {
+    try {
+      const value = localStorage.getItem(prefix + key)
+      if (value !== null) return value
+    } catch {}
+  }
+  try {
+    return sessionStorage.getItem(prefix + key) ?? ''
+  } catch {
+    return ''
+  }
+}
+export const saveSecret = (key: string, value: string) => {
+  // Persist first so a failed write is visible to the caller, never falsely "saved".
+  if (remembersSecrets()) {
+    if (value) localStorage.setItem(prefix + key, value)
+    else localStorage.removeItem(prefix + key)
+  }
+  if (value) sessionStorage.setItem(prefix + key, value)
+  else sessionStorage.removeItem(prefix + key)
+}
+export function secretSnapshot(): Record<string, string> {
+  const keys = new Set(
+    [...Object.keys(localStorage), ...Object.keys(sessionStorage)]
+      .filter((k) => k.startsWith(prefix))
+      .map((k) => k.slice(prefix.length))
+  )
+  return Object.fromEntries([...keys].map((k) => [k, secret(k)]).filter(([, v]) => v))
+}
+export function rememberSecrets(enabled: boolean) {
+  const values = secretSnapshot()
+  if (enabled) {
+    try {
+      for (const [k, v] of Object.entries(values)) localStorage.setItem(prefix + k, v)
+      localStorage.setItem('orbis-remember-secrets', '1')
+    } catch (error) {
+      for (const k of Object.keys(localStorage))
+        if (k.startsWith(prefix)) localStorage.removeItem(k)
+      localStorage.removeItem('orbis-remember-secrets')
+      throw error
+    }
+  } else {
+    for (const [k, v] of Object.entries(values)) sessionStorage.setItem(prefix + k, v)
+    localStorage.removeItem('orbis-remember-secrets')
+    for (const k of Object.keys(localStorage)) if (k.startsWith(prefix)) localStorage.removeItem(k)
+  }
+}
