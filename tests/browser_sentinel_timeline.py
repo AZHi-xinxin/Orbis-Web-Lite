@@ -10,7 +10,7 @@ READ = """async()=>{const db=await new Promise(r=>{const q=indexedDB.open('orbis
 WRITE = """async s=>{const db=await new Promise(r=>{const q=indexedDB.open('orbis-web-lite-v1');q.onsuccess=()=>r(q.result)});await new Promise((r,j)=>{const t=db.transaction('state','readwrite');t.objectStore('state').put(s,'main');t.oncomplete=r;t.onerror=j});db.close()}"""
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path='/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome', headless=True, args=['--no-sandbox', '--no-proxy-server'])
+    browser = p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME'), headless=True, args=['--no-sandbox', '--no-proxy-server'])
     page = browser.new_page(viewport={'width':390, 'height':844}, timezone_id='America/Los_Angeles')
     errors, api_calls = [], []
     page.on('pageerror', lambda e: errors.append(str(e)))

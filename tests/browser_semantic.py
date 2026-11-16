@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 OUT=Path(os.environ.get('ORBIS_TEST_OUTPUT','/tmp/orbis-web-browser-tests'));OUT.mkdir(parents=True,exist_ok=True)
 with sync_playwright() as p:
- b=p.chromium.launch(executable_path='/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome',headless=True,args=['--no-sandbox'])
+ b=p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME'),headless=True,args=['--no-sandbox'])
  ctx=b.new_context(viewport={'width':390,'height':844});page=ctx.new_page();errors=[];requests=[];assets=[]
  page.on('pageerror',lambda e:errors.append(str(e)))
  page.on('request',lambda r:assets.append(r.url))

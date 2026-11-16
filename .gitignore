@@ -11,3 +11,5 @@ build/
 tmp/
 
 .test-build/
+.venv/
+__pycache__/

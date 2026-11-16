@@ -22,7 +22,7 @@ def tts(route):
  with wave.open(f,'wb') as w:w.setnchannels(1);w.setsampwidth(2);w.setframerate(24000);w.writeframes(b'\0\0'*(240000 if voice.count('tts')>1 else 2400))
  route.fulfill(status=200,content_type='audio/wav',body=f.getvalue())
 with sync_playwright() as p:
- b=p.chromium.launch(executable_path='/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome',headless=True,args=['--no-sandbox','--no-proxy-server','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required'])
+ b=p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME'),headless=True,args=['--no-sandbox','--no-proxy-server','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required'])
  ctx=b.new_context(viewport={'width':390,'height':844},permissions=['microphone']);ctx.route('https://api.deepseek.com/anthropic/v1/messages',model);ctx.route('https://api.deepseek.com/v1/tools/asr',asr);ctx.route('https://api.deepseek.com/v1/tools/tts',tts)
  page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.goto(URL)
  page.get_by_role('button',name='设置',exact=True).click();page.get_by_label('API Key',exact=True).fill('synthetic-key');page.get_by_label('在此设备保存密钥',exact=True).check();page.get_by_label('回复朗读服务',exact=True).select_option('deepseek');page.get_by_label('DeepSeek TTS 音色',exact=True).select_option('tide');page.get_by_role('button',name='关闭面板').click()

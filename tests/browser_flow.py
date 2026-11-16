@@ -21,7 +21,7 @@ def route(r):
   else:payload=stream('这是模拟接口的回复。\n\n跨窗流程已经经过测试。')
  r.fulfill(status=200,content_type='text/event-stream',body=payload)
 with sync_playwright() as p:
- b=p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME','/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome'),headless=True,args=['--no-sandbox'])
+ b=p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME'),headless=True,args=['--no-sandbox'])
  ctx=b.new_context(viewport={'width':390,'height':844});page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.route('https://api.deepseek.com/anthropic/v1/messages',route)
  page.goto(os.environ.get('ORBIS_TEST_URL','http://127.0.0.1:18791'));page.get_by_role('button',name='设置',exact=True).click();page.get_by_label('API Key',exact=True).fill('synthetic-not-a-key');page.get_by_role('button',name='关闭面板').click()
  def send(text):

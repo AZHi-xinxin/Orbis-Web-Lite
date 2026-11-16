@@ -5,7 +5,7 @@ from playwright.sync_api import sync_playwright,expect
 OUT=Path(os.environ.get('ORBIS_TEST_OUTPUT','/tmp/orbis-web-browser-tests'));OUT.mkdir(parents=True,exist_ok=True)
 URL=os.environ.get('ORBIS_TEST_URL','http://127.0.0.1:18791/orbis-web/')
 with sync_playwright() as p:
- b=p.chromium.launch(executable_path='/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome',headless=True,args=['--no-sandbox','--no-proxy-server'])
+ b=p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME'),headless=True,args=['--no-sandbox','--no-proxy-server'])
  ctx=b.new_context(viewport={'width':390,'height':844},color_scheme='light');page=ctx.new_page();errors=[];requests=[];bad=[]
  page.on('pageerror',lambda e:errors.append(str(e)));page.on('request',lambda r:requests.append(r.url));page.on('response',lambda r:bad.append((r.status,r.url)) if r.status>=400 else None)
  def ready():page.get_by_role('textbox',name='输入消息',exact=True).wait_for()

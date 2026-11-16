@@ -18,9 +18,11 @@ VPS 负责发送公开的网页、字体、WASM 和本地记忆模型文件，�
 
 ## 构建和托管
 
-使用 Node 24，安装锁定依赖，运行类型检查、测试与构建：
+使用 Node 24、pnpm 11.25.0。仓库的 `packageManager` 固定版本，安装锁定依赖，运行类型检查、测试与构建：
 
 ```sh
+git clone https://github.com/AZHi-xinxin/Orbis-Web-Lite.git
+cd Orbis-Web-Lite
 corepack pnpm install --frozen-lockfile
 corepack pnpm type
 corepack pnpm test
@@ -34,6 +36,26 @@ ORBIS_WEB_BASE=/orbis-web/ corepack pnpm build
 ```
 
 将整个 `dist/` 发布到 HTTPS 静态主机。保留字体、图标、memory 模型及许可、WASM 和 service-worker 文件；发布当前源码归档供页脚下载，并履行 AGPL 源码提供要求。`index.html` 和 `sw.js` 建议 `Cache-Control: no-cache`，带哈希静态资源可长期缓存。不要修改原站域名和路径来更新版本，否则浏览器会将它视为另一份本地资料。
+
+在干净、已提交的源码检出中，构建后生成页脚下载文件：
+
+```sh
+git archive --format=tar.gz HEAD > dist/source.tar.gz
+```
+
+有本地改动时，先提交自己的修改再归档，确保源码对应正在运行的版本。源码不应含密钥、浏览器数据、`node_modules` 或私人备份。
+
+不想构建时，可从 [Releases](https://github.com/AZHi-xinxin/Orbis-Web-Lite/releases) 下载 `static-root.zip` 或 `static-orbis-web.zip`，分别用于 `/` 与 `/orbis-web/`，完整解压内容后上传；包内已经包含对应源码。部署到其他子路径时按上面的 `ORBIS_WEB_BASE` 重新构建，不能只改文件夹名。`.mjs` 使用 JavaScript MIME，`.wasm` 使用 `application/wasm`；不要只上传 `index.html`。
+
+## 可选 GitHub Pages
+
+Fork 后在仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**，再到 Actions 手动运行 **Deploy GitHub Pages**。工作流按 Pages 返回的子路径构建，打包对应源码；推送代码不会自动发布站点。工作流运行前，先检查仓库的 Pages 权限与运行设置。
+
+当前公开使用入口仍是首页提供的网址；本次 GitHub 发布不自动为用户迁移数据，也不要求原站用户换入口。[GitHub 自定义 Pages 工作流说明](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)。
+
+## 更新已有站点
+
+保存当前工作并准备好本地备份，再在相同域名、相同路径替换完整构建文件；不要清用户网站数据。建议先上传到新的版本目录并核对文件，再切换入口，保留上一份可回退构建。刷新或重开后核对设置里的版本。Service Worker 仅管理此应用路径的页面资源，不负责云端数据备份。
 
 如果托管在自己的电脑上，首次访问和更新时这台电脑需要在线；VPS 通常保持在线。使用已有公共静态站点时，人类自己的电脑无需开机。已经缓存的页面可离线打开，但 AI、搜索、ASR/TTS 仍需要网络和服务可用；本地哨兵不能在关页后运行。
 

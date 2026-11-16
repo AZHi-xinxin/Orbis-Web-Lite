@@ -10,7 +10,7 @@ def reply(r):
  events=[{'type':'content_block_delta','delta':{'text':'收到测试消息。'}},{'type':'message_stop'}]
  r.fulfill(status=200,content_type='text/event-stream',body=''.join('data: '+json.dumps(e,ensure_ascii=False)+'\n\n' for e in events))
 with sync_playwright() as p:
- b=p.chromium.launch(executable_path='/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome',headless=True,args=['--no-sandbox','--no-proxy-server'])
+ b=p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME'),headless=True,args=['--no-sandbox','--no-proxy-server'])
  page=b.new_page(viewport={'width':390,'height':844});errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.route('https://api.deepseek.com/anthropic/v1/messages',reply)
  page.goto(URL);expect(page.locator('h1')).to_have_text('欢迎回家')
  page.get_by_role('button',name='告诉 Orbis 怎么称呼你').click();expect(page.get_by_label('AI 可见',exact=True)).not_to_be_checked()

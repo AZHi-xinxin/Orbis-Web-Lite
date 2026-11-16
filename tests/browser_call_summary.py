@@ -6,7 +6,7 @@ OUT=Path(os.environ.get('ORBIS_TEST_OUTPUT','/tmp/lite-summary'));OUT.mkdir(pare
 URL=os.environ.get('ORBIS_TEST_URL','http://127.0.0.1:18792/orbis-web/')
 requests=[]
 with sync_playwright() as p:
- b=p.chromium.launch(executable_path='/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome',headless=True,args=['--no-sandbox','--no-proxy-server'])
+ b=p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME'),headless=True,args=['--no-sandbox','--no-proxy-server'])
  page=b.new_page(viewport={'width':390,'height':844});errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
  def model(route):
   body=route.request.post_data_json;requests.append(body);assert not body.get('tools')

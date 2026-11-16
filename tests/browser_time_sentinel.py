@@ -7,7 +7,7 @@ OUT=Path(os.environ.get('ORBIS_TEST_OUTPUT','/tmp/axu-lite-alpha9-time-sentinel'
 READ="""async()=>{const db=await new Promise(r=>{const q=indexedDB.open('orbis-web-lite-v1');q.onsuccess=()=>r(q.result)});return await new Promise(r=>{const q=db.transaction('state').objectStore('state').get('main');q.onsuccess=()=>{r(q.result);db.close()}})}"""
 requests=[];time_readings=[]
 with sync_playwright() as p:
- b=p.chromium.launch(executable_path='/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome',headless=True,args=['--no-sandbox','--no-proxy-server'])
+ b=p.chromium.launch(executable_path=os.environ.get('ORBIS_CHROME'),headless=True,args=['--no-sandbox','--no-proxy-server'])
  page=b.new_page(viewport={'width':390,'height':844},timezone_id='Asia/Shanghai');errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
  def model(route):
   body=route.request.post_data_json;requests.append(body)

@@ -1,6 +1,18 @@
-# Orbis Web Lite — 0.1.0-alpha.5
+# Orbis Web Lite — 0.1.0-alpha.10
 
-单一 AI、多窗口的 Orbis 网页试作。基于 [DeepSeek chat-demo](https://github.com/deepseek-ai/chat-demo) 的 Markdown、SSE 与音频录制组件，移植 Orbis 的记忆/压缩行为。未改动 Android Orbis 工作树。
+单一 AI、多窗口的 Orbis 网页实验版，面向 iPhone、iPad 与桌面浏览器，不需要旁边运行安卓设备或登录 Orbis 社区。基于 [DeepSeek chat-demo](https://github.com/deepseek-ai/chat-demo) 的 Markdown、SSE 与音频录制组件，移植 Orbis 的记忆/压缩行为。
+
+**[打开网页版](https://consult.azhi-xinxin.cn/orbis-web/)** · **[下载与版本说明](https://github.com/AZHi-xinxin/Orbis-Web-Lite/releases)** · **[常见问题](docs/FAQ.zh-CN.md)** · **[自行部署](SELF-HOSTING.md)**
+
+## 第一次使用
+
+1. 用 Safari / Chrome 打开现有入口，在右上角「设置 → 连接与外观」填接口类型、基础地址、模型准确名称和自己的 API Key。没有预置付费账号或免费模型额度。
+2. 先发一句文字确认连接，需要语音时再配置「语音与电话」。普通使用不需要 VPS、Wi-Fi 调试或一直开着自己的电脑。
+3. 可说「请用记忆工具记住……」，在「窗口列表 → 记忆库」核对。标准/独立档支持同一浏览器内跨窗查询，轻量档只访问当前窗口。
+4. iPhone 可从「Safari 分享 → 添加到主屏幕」。固定一个入口，换浏览器、设备或域名前先导出完整备份。
+5. 定期在「导入与导出 → 本地存储与备份」保存文件。**清除网站数据可能删除全部本地聊天，本站没有云端副本可找回。**
+
+手机是否要服务器、电脑是否要一直开着、清缓存的影响、Android 迁移、缓存与后台哨兵等问题，见 [完整 FAQ](docs/FAQ.zh-CN.md)。
 
 ## 已接入
 
@@ -15,6 +27,8 @@
 - 拍照、相册与文本/代码附件。
 - 每条聊天消息固定保存记录时间/时区，不逐轮重写历史时间以保护缓存前缀；`orbis_time` 可查询最新时间。人类只开关哨兵授权，具体规则由 AI 自主创建与管理，界面只读查看。
 - DeepSeek ASR、系统朗读或 DeepSeek TTS，同源可复用聊天密钥，前台逐句通话、停顿发送与手动打断；基础定时哨兵；可选远程 Streamable HTTP MCP，逐工具开关。
+- 独立通话界面、可滚动与展开的字幕、挂断总结和完整通话原文/音频；播放被拦截时恢复已有音频，不重复 TTS。AI 语音条与来电分别由人类授权，接听后才启用麦克风。
+- 哨兵唤醒显示为默认折叠的时间点，展开查看来源、时间和详情；展开收起不改历史、不额外请求模型。
 - Lite 完整 ZIP 原路恢复（含设置/媒体/注入记录/压缩回退），可选带密钥的密码加密备份；`orbis_chat` v1 文字迁移导出。
 - 内置分主题操作教程及 AI `orbis_help`，无需每轮注入整本手册。
 
@@ -26,19 +40,25 @@
 
 轻量档按本项目需求隔离窗口，与 Android 原版“关闭自动注入但允许跨窗查询”的轻量档有意不同。不要宣称本试作完全等同 Android Orbis。
 
+Lite 世界书是当前窗口的一整段背景，没有 Android 的关键词条目扫描库。MCP 只支持远程 Streamable HTTP，没有本地 stdio、旧 HTTP+SSE 或 OAuth 配置。没有云端账号与跨设备自动同步，也没有 Android 的多助手管理、社区或设备控制界面。缓存前缀稳定不能保证服务商的实际命中率。
+
 ## 本地开发
 
-Node 24、pnpm 11：
+Node 24、pnpm 11.25.0；保留锁文件：
 
 ```sh
-pnpm install
-pnpm type
-pnpm test
-pnpm build
-pnpm dev
+git clone https://github.com/AZHi-xinxin/Orbis-Web-Lite.git
+cd Orbis-Web-Lite
+corepack pnpm install --frozen-lockfile
+corepack pnpm type
+corepack pnpm test
+corepack pnpm build
+corepack pnpm dev
 ```
 
 测试浏览器可指定 `ORBIS_CHROME`、`ORBIS_TEST_OUTPUT`。`tests/browser_flow.py` 使用本地 18791 端口与模拟模型；`tests/browser_semantic.py` 使用真实本地 ONNX。先用 `python3 -m http.server 18791 --bind 127.0.0.1 --directory dist` 提供构建目录，再运行 Python Playwright 测试。`tests/browser_settings.py` 验证实际 UI 设置/工具与手册。测试数据全部合成，不含真实聊天、API Key 或私有服务器。
+
+浏览器测试还支持 `ORBIS_TEST_URL`；安装 Python Playwright 并执行 `python -m playwright install chromium` 后可用默认 Chromium，或用 `ORBIS_CHROME` 指定浏览器。类型检查、52 项逻辑测试与生产构建已通过；`pnpm lint` 仍有既有风格与 Hook 依赖问题，本次预发布不宣称 lint 全绿。详见 [alpha.10 发布说明](docs/RELEASE-0.1.0-alpha.10.md)。
 
 ## 数据与凭证
 
