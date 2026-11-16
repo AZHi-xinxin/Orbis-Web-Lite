@@ -5,6 +5,7 @@ import {
   requestParameters,
 } from './configuration.js'
 import { readServerSentEvents } from '../services/api/sse.js'
+import { profileContext } from './profile.js'
 import {
   displayText,
   liveSelection,
@@ -196,6 +197,7 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
       : ''
   const system =
     settings.prompt +
+    profileContext(settings, s.settings) +
     '\n[Orbis Web Lite 宿主] 单一 AI、多窗口。初次使用或指导人类时可调用 orbis_help 按主题读取内置说明书；不要猜不存在的功能。\n' +
     (conversation.enabled ? '[当前窗口补充提示词]\n' + conversation.text + '\n' : '') +
     (conversation.world_book_enabled

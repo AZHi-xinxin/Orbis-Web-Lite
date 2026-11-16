@@ -1,5 +1,6 @@
 import { assetUrl } from './assets.js'
 import { manual } from './help.js'
+import { profileName } from './profile.js'
 import {
   defaultConversation,
   defaultGeneration,
@@ -41,7 +42,7 @@ const modes: Record<Mode, string> = {
   independent: '独立 · 跨窗充分',
 }
 const styles = { silk: '云绸', glass: '星雾', stars: '星芒', book: '书页' }
-type Panel = 'none' | 'memory' | 'context' | 'settings' | 'mcp' | 'sentinel' | 'backup' | 'help'
+type Panel = 'none' | 'memory' | 'context' | 'settings' | 'mcp' | 'sentinel' | 'backup' | 'help' | 'profile'
 const bytes = (n: number) =>
   n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.ceil(n / 1024) + ' KB'
 const base64 = (file: Blob) =>
@@ -84,6 +85,29 @@ export function App() {
     [ruleKind, setRuleKind] = useState<'once' | 'interval' | 'daily'>('once'),
     [ruleInterval, setRuleInterval] = useState('60')
   const [windowQuery, setWindowQuery] = useState('')
+  const [profileDraft, setProfileDraft] = useState(''),
+    [profileVisible, setProfileVisible] = useState(false),
+    [profileSaving, setProfileSaving] = useState(false)
+  const humanName = profileName(state.settings.userName)
+  function openProfile() {
+    setProfileDraft(humanName)
+    setProfileVisible(state.settings.userNameVisibleToAI === true)
+    setPanel('profile')
+  }
+  async function saveProfile() {
+    if (profileSaving) return
+    setProfileSaving(true)
+    try {
+      const r = await transact(s => {
+        s.settings.userName = profileName(profileDraft)
+        s.settings.userNameVisibleToAI = profileVisible
+      })
+      setState(r.state)
+      setPanel('none')
+      setNotice('称呼已保存')
+    } catch (e) { fail(e) }
+    finally { setProfileSaving(false) }
+  }
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const appearance = state.settings.appearance ?? 'orbis'
   const colorMode = state.settings.colorMode ?? (state.settings.dark ? 'dark' : 'light')
@@ -483,6 +507,11 @@ export function App() {
             ×
           </button>
         </div>
+        <button className="user-profile" onClick={openProfile} aria-label="修改我的称呼">
+          <span className="profile-avatar" aria-hidden="true">{Array.from(humanName)[0] || '○'}</span>
+          <span><strong>{humanName || '设置你的称呼'}</strong><small>欢迎回家 · 修改称呼</small></span>
+          <span aria-hidden="true">✎</span>
+        </button>
         <button disabled={switching} className="new-window" onClick={() => void addWindow()}>
           ＋ 开一个新窗口
         </button>
@@ -596,7 +625,8 @@ export function App() {
           {!shown.length && (
             <div className="welcome">
               <div className="welcome-orb">{deepseek ? <img src={assetUrl('deepseek.svg')} alt="DeepSeek" /> : '✦'}</div>
-              {deepseek ? <h1>你好，有什么我能帮你的吗？</h1> : <><h1>换一个窗口，<br />也能接着聊。</h1><p>值得留下的事，放进记忆里。<br />从这一句话开始。</p></>}
+              <h1>{humanName ? `${humanName}，欢迎回家` : '欢迎回家'}</h1>
+              {!humanName && <button className="welcome-profile" onClick={openProfile}>告诉 Orbis 怎么称呼你</button>}
               {!deepseek && <div className="suggestions"><button onClick={() => setDraft('请把这件事存进记忆库：')}>记住一件事 ↗</button><button onClick={() => setPanel('memory')}>看看记忆库 ↗</button></div>}
             </div>
           )}
@@ -856,6 +886,7 @@ export function App() {
                     sentinel: '哨兵与主动消息',
                     backup: '把记忆带走',
                     help: '说明书与使用教程',
+                    profile: '我的称呼',
                   }[panel]
                 }
               </h2>
@@ -863,6 +894,16 @@ export function App() {
                 ×
               </button>
             </div>
+            {panel === 'profile' && (
+              <form className="profile-form" onSubmit={e => { e.preventDefault(); void saveProfile() }}>
+                <label>你的称呼<input aria-label="你的称呼" autoFocus maxLength={120} value={profileDraft} onChange={e => setProfileDraft(e.target.value)} placeholder="想让 Orbis 怎么称呼你？" /></label>
+                <p className="profile-preview">{profileName(profileDraft) ? `${profileName(profileDraft)}，欢迎回家` : '欢迎回家'}</p>
+                <label className="toggle"><input type="checkbox" checked={profileVisible} onChange={e => setProfileVisible(e.target.checked)} />AI 可见</label>
+                <p className="hint">开启后，从下一次发消息开始，AI 就能知道你的称呼，所有窗口通用。默认关闭，仅用于页面欢迎语。</p>
+                <p className="hint">关闭后不再主动发送称呼，已经发给 AI 的聊天记录不会删除。称呼最多 60 个字，保存在此浏览器。</p>
+                <button className="primary" type="submit" disabled={profileSaving}>{profileSaving ? '保存中…' : '保存称呼'}</button>
+              </form>
+            )}
             {panel === 'help' && (
               <>
                 <div className="help-tabs">
@@ -1018,6 +1059,7 @@ export function App() {
             )}
             {panel === 'settings' && (
               <>
+                <button className="profile-setting" onClick={openProfile}>我的称呼：{humanName || '未填写'} · {state.settings.userNameVisibleToAI === true && humanName ? 'AI 可见' : '仅页面显示'} →</button>
                 <label>
                   AI 名称
                   <input

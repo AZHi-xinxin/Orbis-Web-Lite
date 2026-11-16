@@ -11,7 +11,7 @@ with sync_playwright() as p:
  def ready():page.get_by_role('textbox',name='输入消息',exact=True).wait_for()
  def setting(label,value):
   page.get_by_role('button',name='设置',exact=True).click();page.get_by_label(label,exact=True).select_option(value);page.get_by_role('button',name='关闭面板').click()
- page.goto(URL);ready();expect(page.locator('html')).to_have_attribute('data-appearance','deepseek');expect(page.locator('h1')).to_have_text('你好，有什么我能帮你的吗？')
+ page.goto(URL);ready();expect(page.locator('html')).to_have_attribute('data-appearance','deepseek');expect(page.locator('h1')).to_have_text('欢迎回家')
  assert page.evaluate('getComputedStyle(document.body).backgroundColor')=='rgb(255, 255, 255)';page.screenshot(path=str(OUT/'deepseek-mobile-light.png'))
  page.emulate_media(color_scheme='dark');expect(page.locator('html')).to_have_attribute('data-orbis-theme','dark');assert page.evaluate('getComputedStyle(document.body).backgroundColor')=='rgb(26, 26, 26)';page.screenshot(path=str(OUT/'deepseek-mobile-dark.png'))
  setting('显示模式','light');page.reload();ready();expect(page.locator('html')).to_have_attribute('data-orbis-theme','light')
