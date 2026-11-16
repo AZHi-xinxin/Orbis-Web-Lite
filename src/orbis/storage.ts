@@ -12,6 +12,17 @@ export async function readState(): Promise<State> {
   const d = await db()
   return (await d.get('state', 'main')) ?? initialState()
 }
+// Separate from chat state: unfinished summaries cannot become model context or memories.
+// Only an explicit reviewed application changes the conversation.
+export async function readCompactionDraft(id: string): Promise<unknown> {
+  return (await db()).get('state', 'manual-compaction:' + id)
+}
+export async function saveCompactionDraft(id: string, value: unknown): Promise<void> {
+  await (await db()).put('state', value, 'manual-compaction:' + id)
+}
+export async function clearCompactionDraft(id: string): Promise<void> {
+  await (await db()).delete('state', 'manual-compaction:' + id)
+}
 /** All logical changes, including original branch + compaction + rollback slot, commit together. */
 export async function transact<T>(
   operation: (s: State) => T

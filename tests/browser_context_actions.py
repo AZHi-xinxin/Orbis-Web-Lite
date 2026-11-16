@@ -14,7 +14,7 @@ with sync_playwright() as p:
   is_summary='受人类委托整理历史聊天' in body.get('system','')
   if is_summary:
    summary_count[0]+=1
-   assert body['tools']==[] and body['max_tokens']==4096
+   assert body['tools']==[] and body['max_tokens']==8192
    assert len(json.dumps(body,ensure_ascii=False))<42000
    assert '超长世界书' not in body['system']
    if mode[0]=='fail': route.fulfill(status=400,content_type='application/json',body='{"error":"synthetic summary failure"}');return
@@ -38,7 +38,7 @@ with sync_playwright() as p:
  expect(page.get_by_role('button',name='AI 分段生成摘要')).to_be_enabled(timeout=15000)
  assert page.evaluate(READ)['windows'][0]['messages']==originals
  mode[0]='hold';page.get_by_role('button',name='AI 分段生成摘要').click()
- expect(page.get_by_role('button',name='取消生成')).to_be_visible();page.get_by_role('button',name='取消生成').click()
+ expect(page.get_by_role('button',name='暂停生成')).to_be_visible();page.get_by_role('button',name='暂停生成').click()
  expect(page.get_by_role('button',name='AI 分段生成摘要')).to_be_enabled(timeout=15000)
  assert page.evaluate(READ)['windows'][0]['messages']==originals
  for route in held: route.abort()

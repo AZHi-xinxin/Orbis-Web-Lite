@@ -1,4 +1,4 @@
-# Orbis Web Lite — 0.1.0-alpha.12
+# Orbis Web Lite — 0.1.0-alpha.13
 
 单一 AI、多窗口的 Orbis 网页实验版，面向 iPhone、iPad 与桌面浏览器，不需要旁边运行安卓设备或登录 Orbis 社区。基于 [DeepSeek chat-demo](https://github.com/deepseek-ai/chat-demo) 的 Markdown、SSE 与音频录制组件，移植 Orbis 的记忆/压缩行为。
 
@@ -16,7 +16,7 @@
 
 DeepSeek 官端 ZIP 可在「导入与导出 → 导入 DeepSeek 官端聊天」选择会话与分支。支持新版分会话包、旧版 conversations.json、空标题、长消息和变化的历史片段；大包按需读取，聊天按 80 条分页显示。可选恢复包内图片和音频，其他附件保留引用，原 ZIP 请继续保存。详见 [alpha.11 发布说明](docs/RELEASE-0.1.0-alpha.11.md)。
 
-alpha.12 新增聊天分支与人类手动压缩：右上圆环进入「上下文与压缩」，或从消息更多菜单开启分支。超限后可分段生成摘要，核对后应用，也可自行填写；原文保留，失败不修改聊天。详见 [本版说明](docs/RELEASE-0.1.0-alpha.12.md)。
+alpha.13 改进长历史压缩：分段摘要可并发生成、逐段保存并从失败处续接；支持自定义总结视角，核对后各段自动存入记忆库，整次操作只保留一个原文窗口。详见 [本版说明](docs/RELEASE-0.1.0-alpha.13.md)。
 
 ## 已接入
 

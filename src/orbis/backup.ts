@@ -146,6 +146,7 @@ export function restoreBackup(
       e.id = eventMap.get(e.id) ?? e.id
       if (e.backupId) e.backupId = map.get(e.backupId) ?? e.backupId
       if (e.noteId) e.noteId = noteMap.get(e.noteId) ?? e.noteId
+      if (e.segments) e.segments = e.segments.map(part => ({ ...part, noteId: noteMap.get(part.noteId) ?? part.noteId }))
     }
   // Imported traces are historical data, never replayed as actions.
   const addedIds = new Set(addedWindows.map((w) => w.id)),
@@ -333,6 +334,11 @@ function validateState(s: State) {
         callIds.add(c.id)
         c.raw?.forEach(validateMessage)
       }
+    }
+    for (const e of w.compressions) {
+      if (e.segments !== undefined && (!Array.isArray(e.segments) || e.segments.some(part =>
+        !part || typeof part.noteId !== 'string' || typeof part.summary !== 'string' || part.summary.length > 24000)))
+        throw Error('分段压缩记录格式错误')
     }
     if (w.rollback) {
       if (!Array.isArray(w.rollback.originals)) throw Error('回退点格式错误')

@@ -75,6 +75,7 @@ export type Compression = {
   at: number
   summaryId: string
   noteId?: string
+  segments?: { noteId: string; summary: string }[]
   summary: string
   before: number
   after: number
@@ -471,8 +472,9 @@ export function compact(
   initiatedBy?: 'human'
 ): Compression {
   const w = windowOf(s, window)
-  if (!summary.trim() || summary.length > 65536)
-    throw Error('请提供完整、非空且不超过 64K 字符的摘要')
+  const summaryLimit = initiatedBy === 'human' ? 1048576 : 65536
+  if (!summary.trim() || summary.length > summaryLimit)
+    throw Error(`请提供完整、非空且不超过 ${summaryLimit.toLocaleString()} 字符的摘要`)
   if (!Number.isInteger(keepRecent) || keepRecent < 0 || keepRecent > w.messages.length)
     throw Error('保留数量超出当前消息范围')
   const originals = structuredClone(w.messages)
@@ -725,12 +727,13 @@ export function semanticSources(
   return s.windows
     .flatMap((w) =>
       w.compressions
-        .filter((e) => !e.rolledBack && e.noteId)
-        .flatMap((e) => {
-          const n = s.notes.find((n) => n.id === e.noteId)
+        .filter((e) => !e.rolledBack)
+        .flatMap((e) => (e.segments ?? (e.noteId ? [{ noteId: e.noteId, summary: e.summary }] : []))
+        .flatMap((part) => {
+          const n = s.notes.find((n) => n.id === part.noteId)
           if (!n || n.deleted || !['conditional', 'static'].includes(n.state)) return []
           if (n.state === 'static') {
-            if (n.body !== e.summary) return []
+            if (n.body !== part.summary) return []
             const versions = [...n.history, revisionOf(n)]
             if (versions[0].revision !== 1 || versions[0].state !== 'static' || versions[0].deleted)
               return []
@@ -753,7 +756,7 @@ export function semanticSources(
           return [
             { id: n.id, revision: n.revision, eventId: e.id, text: n.summary || n.body, at: e.at },
           ]
-        })
+        }))
     )
     .sort((a, b) => b.at - a.at)
 }

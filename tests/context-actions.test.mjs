@@ -91,3 +91,60 @@ test('fork copies completed voice archives and remaps records without leaking la
  assert.equal(b.voiceSessions[0].id,b.messages[0].voiceSessionId)
  assert.notEqual(b.voiceSessions[0].id,'voice')
 })
+
+test('88 independent summaries: bounded concurrency, failure persists out-of-order results, resumes only missing', async () => {
+ const {resumeSummaries,defaultSummaryOptions,summaryDraftText,reviewedSegments}=await import('../.test-build/src/orbis/manualCompaction.js')
+ const {s,w}=setup(),before=structuredClone(s),chunks=Array.from({length:88},(_,i)=>'片段'+i)
+ let active=0,peak=0,saved=[],failed=false;const seen=[];const options={...defaultSummaryOptions(),instructions:'以阿止第一人称总结'}
+ const model=async(state,win)=>{
+  const body=JSON.parse(win.messages[0].text),i=Number(body.next_history_fragment.slice(2));seen.push(i)
+  assert.equal(body.previous_summary,undefined);assert.ok(state.settings.prompt.includes(options.instructions));assert.equal(state.settings.generation.maxTokens,8192)
+  active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,(i%3+1)*2));active--
+  if(i===4&&!failed){failed=true;return {text:'被截断的摘要',reasoning:'',calls:[],truncated:true}}
+  return {text:'我记得第'+i+'段的约定',reasoning:'',calls:[]}
+ }
+ await assert.rejects(()=>resumeSummaries(s,w,chunks,[],options,new AbortController().signal,async v=>{saved=structuredClone(v)},()=>{},model),/第 5 \/ 88 段未完成.*被截断/)
+ assert.equal(saved[4],null);assert.ok(saved[5]);assert.equal(peak,3);assert.ok(seen.length<88)
+ const successful=seen.filter(i=>i!==4),oldSeen=seen.length
+ const result=await resumeSummaries(s,w,chunks,saved,options,new AbortController().signal,async v=>{saved=structuredClone(v)},()=>{},model)
+ assert.equal(result.length,88);assert.equal(new Set(seen.slice(oldSeen)).size,88-successful.length)
+ assert.ok(successful.every(i=>!seen.slice(oldSeen).includes(i)));assert.deepEqual(s,before)
+ const text=summaryDraftText(result,'segments');assert.equal(reviewedSegments(text,88).length,88)
+ const event=applyManualCompaction(s,w.id,structuredClone(w.messages),text,0,reviewedSegments(text,88))
+ assert.equal(s.windows.length,2);assert.equal(s.notes.length,88);assert.equal(event.segments.length,88);assert.equal(w.messages.length,1)
+ assert.equal(s.notes[4].body,'我记得第4段的约定')
+ const {semanticSources}=await import('../.test-build/src/orbis/core.js');assert.equal(semanticSources(s).length,88)
+ const dest=initialState();restoreBackup(dest,fullBackup(s));assert.equal(semanticSources(dest).length,88)
+ rollback(s,w.id);assert.deepEqual(w.messages,before.windows[0].messages);assert.equal(semanticSources(s).length,0)
+})
+test('cancel and storage failure never launch additional work or apply a partial summary',async()=>{
+ const {resumeSummaries,defaultSummaryOptions}=await import('../.test-build/src/orbis/manualCompaction.js')
+ const {s,w}=setup(),before=structuredClone(s),options={...defaultSummaryOptions(),concurrency:1};let calls=0,saved=[]
+ const c=new AbortController()
+ await assert.rejects(()=>resumeSummaries(s,w,['1','2','3'],[],options,c.signal,async v=>{saved=v;c.abort()},()=>{},async()=>{calls++;return {text:'完整段',calls:[]}}))
+ assert.equal(calls,1);assert.equal(saved[0],'完整段');assert.equal(saved[1],null);assert.deepEqual(s,before)
+ calls=0
+ await assert.rejects(()=>resumeSummaries(s,w,['1','2'],[],options,new AbortController().signal,async()=>{throw Error('存储空间不足')},()=>{},async()=>{calls++;return {text:'完整段',calls:[]}}),/存储空间不足/)
+ assert.equal(calls,1);assert.deepEqual(s,before)
+})
+test('specific validation errors, rolling dependency, edited notes and unchanged AI limit',async()=>{
+ const {resumeSummaries,defaultSummaryOptions,reviewedSegments,summaryDraftText}=await import('../.test-build/src/orbis/manualCompaction.js')
+ const {s,w}=setup();const options={...defaultSummaryOptions(),concurrency:1}
+ for(const [out,pattern] of [[{text:'',reasoning:'think',calls:[]},/只有|只返回了思考/],[{text:'',calls:[]},/没有返回摘要正文/],[{text:'x',calls:[{}]},/工具调用/],[{text:'a'.repeat(24001),calls:[]},/超过24,000/]]){
+  await assert.rejects(()=>resumeSummaries(s,w,['1'],[],options,new AbortController().signal,async()=>{},()=>{},async()=>out),pattern)
+ }
+ let n=0
+ const result=await resumeSummaries(s,w,['1','2'],[],{...options,mode:'rolling',concurrency:4},new AbortController().signal,async()=>{},()=>{},async(_s,win)=>{
+  const data=JSON.parse(win.messages[0].text);assert.equal(data.previous_summary,n===0?'':'摘要1');return {text:'摘要'+(++n),calls:[]}
+ })
+ assert.equal(summaryDraftText(result,'rolling'),'摘要2')
+ assert.throws(()=>reviewedSegments('随便重写没有标题',2),/保留每段/)
+ const parts=reviewedSegments('【历史摘要 1】\n我修改后的事实\n\n【历史摘要 2】\n保留的约定',2)
+ applyManualCompaction(s,w.id,structuredClone(w.messages),summaryDraftText(parts,'segments'),0,parts)
+ assert.deepEqual(s.notes.map(n=>n.body),parts)
+ const {compact}=await import('../.test-build/src/orbis/core.js')
+ assert.throws(()=>compact(s,w.id,'字'.repeat(65537),0),/65,536/)
+ assert.throws(()=>applyManualCompaction(s,w.id,structuredClone(w.messages),'字'.repeat(65537),0),/单份摘要上限/)
+ const many=Array.from({length:4},()=> '字'.repeat(20000))
+ assert.doesNotThrow(()=>applyManualCompaction(s,w.id,structuredClone(w.messages),summaryDraftText(many,'segments'),0,many))
+})

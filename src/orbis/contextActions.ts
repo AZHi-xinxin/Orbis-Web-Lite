@@ -75,9 +75,24 @@ export function summaryChunks(text: string, size: number): string[] {
   return result
 }
 
-export function applyManualCompaction(s: State, id: string, originals: Message[], summary: string, keep: number) {
+export function applyManualCompaction(s: State, id: string, originals: Message[], summary: string, keep: number,
+  segments?: string[]) {
   const w = windowOf(s, id)
   assertIdle(w)
   if (JSON.stringify(w.messages) !== JSON.stringify(originals)) throw Error('聊天已变化，请重新打开压缩面板生成或核对摘要')
-  return compact(s, id, summary, keep, undefined, 'human')
+  if (!segments && summary.length > 65536) throw Error('单份摘要上限为65,536字符；较长内容请使用保留各段摘要模式')
+  if (segments && (!segments.length || segments.some(p => !p.trim() || p.length > 24000)))
+    throw Error('分段摘要不完整，未应用压缩')
+  const event = compact(s, id, summary, keep, undefined, 'human')
+  if (segments) {
+    const template = s.notes.find(n => n.id === event.noteId)!
+    s.notes = s.notes.filter(n => n.id !== event.noteId)
+    delete event.noteId
+    event.segments = segments.map(body => {
+      const noteId = uid()
+      s.notes.push({ ...template, id: noteId, body, history: [], tags: [] })
+      return { noteId, summary: body }
+    })
+  }
+  return event
 }
