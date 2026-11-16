@@ -30,6 +30,9 @@ export async function transact<T>(
     try {
       tx.abort()
     } catch {}
+    // A failed put and the transaction's completion promise reject separately.
+    // Observe both while preserving the original quota/validation error for the UI.
+    await tx.done.catch(() => {})
     throw e
   }
 }

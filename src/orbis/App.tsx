@@ -20,7 +20,7 @@ import {
   contextMessages,
   type GenerationOptions,
 } from './configuration.js'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Markdown } from '../components/markdown/Markdown.js'
 import { startRecording, type Recording } from '../services/speech/recorder.js'
 import {
@@ -142,6 +142,7 @@ export function App() {
     [mcpUrl, setMcpUrl] = useState(''),
     [mcpKey, setMcpKey] = useState('')
   const [windowQuery, setWindowQuery] = useState('')
+  const [historyPage, setHistoryPage] = useState<{ window: string; end: number } | null>(null)
   const [profileDraft, setProfileDraft] = useState(''),
     [profileVisible, setProfileVisible] = useState(false),
     [profileSaving, setProfileSaving] = useState(false)
@@ -182,14 +183,14 @@ export function App() {
   }
   const [help, setHelp] = useState('overview')
   const w = state.windows.find((w) => w.id === active) ?? state.windows[0],
-    used = w
+    used = useMemo(() => w
       ? tokens(
           textOf({
             ...w,
             messages: contextMessages(w.messages, state.settings.generation ?? defaultGeneration()),
           })
         )
-      : 0,
+      : 0, [w, state.settings.generation]),
     threshold = state.settings.threshold,
     percent = threshold ? Math.round((100 * used) / threshold) : null
   const conversation = w?.conversation ?? defaultConversation(),
@@ -796,7 +797,10 @@ export function App() {
       fail(e)
     }
   }
-  const shown = w ? callDisplayMessages(w, w.messages.map((m) => (partial?.id === m.id ? partial : m))) : []
+  const history = useMemo(() => w ? callDisplayMessages(w, w.messages.map((m) => (partial?.id === m.id ? partial : m))) : [], [w, partial])
+  const pageEnd = historyPage?.window === w?.id && !partial ? Math.min(historyPage.end, history.length) : history.length
+  const pageStart = Math.max(0, pageEnd - 80)
+  const shown = history.slice(pageStart, pageEnd)
   if (!ready) return <div className="loading">✦ 正在打开你的 Orbis…</div>
   return (
     <div className={'orbis ' + state.settings.style + (deepseek ? ' deepseek' : '')}>
@@ -1012,6 +1016,14 @@ export function App() {
               )}
             </div>
           )}
+          {(pageStart > 0 || pageEnd < history.length) && <nav className="history-pages" aria-label="聊天历史分页">
+            <span>第 {pageStart + 1}–{pageEnd} 条 / 共 {history.length} 条（仅分页显示，原文完整保留）</span>
+            {pageStart > 0 && <button onClick={() => setHistoryPage({ window: w.id, end: pageStart })}>查看更早的 80 条</button>}
+            {pageEnd < history.length && <>
+              <button onClick={() => setHistoryPage({ window: w.id, end: Math.min(history.length, pageEnd + 80) })}>查看后续 80 条</button>
+              <button onClick={() => setHistoryPage(null)}>回到最新消息</button>
+            </>}
+          </nav>}
           {shown.map((m) => (
             <article key={m.id} className={'message ' + (m.role === 'user' && m.event ? 'sentinel-event' : m.role)} id={'msg-' + m.id}>
               {m.voiceSessionEnd ? (
@@ -1048,11 +1060,13 @@ export function App() {
                       {m.quoteId && (
                         <button
                           className="quote"
-                          onClick={() =>
-                            document
+                          onClick={() => {
+                            const index = history.findIndex(item => item.id === m.quoteId)
+                            if (index >= 0 && (index < pageStart || index >= pageEnd)) { setHistoryPage({ window: w.id, end: Math.min(history.length, index + 40) }) }
+                            requestAnimationFrame(() => document
                               .getElementById('msg-' + m.quoteId)
-                              ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                          }
+                              ?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+                          }}
                         >
                           ↳{' '}
                           {w.messages.find((x) => x.id === m.quoteId)?.retracted

@@ -3,6 +3,8 @@ import type { State } from './core.js'
 import { download, fullBackup, restoreBackup, universalChat } from './backup.js'
 import { speechSettings } from './speech.js'
 import { encryptedBackup, openBackup } from './portableBackup.js'
+import { DeepSeekImportPanel } from './DeepSeekImportPanel.js'
+import { LocalZip } from './localZip.js'
 import {
   remembersSecrets,
   rememberSecrets,
@@ -63,6 +65,7 @@ export function StoragePanel({
     [includeKeys, setIncludeKeys] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null),
     [importPassword, setImportPassword] = useState('')
+  const [deepSeekFile, setDeepSeekFile] = useState<File | null>(null)
   const [restoreSettings, setRestoreSettings] = useState(true),
     [restoreKeys, setRestoreKeys] = useState(false),
     [working, setWorking] = useState(false)
@@ -105,6 +108,9 @@ export function StoragePanel({
     if (!importFile || busy || working) return
     setWorking(true)
     try {
+      if (importFile.size > 128 * 1024 * 1024 * 1.4) {
+        throw Error('此入口仅用于 Lite 完整备份；DeepSeek 官端 ZIP 请用上方导入入口（支持按会话读取大型包）')
+      }
       const opened = await openBackup(
         new Uint8Array(await importFile.arrayBuffer()),
         importPassword
@@ -313,6 +319,7 @@ export function StoragePanel({
           {working ? '正在处理…' : '导出加密 Lite 备份'}
         </button>
       </details>
+      <DeepSeekImportPanel file={deepSeekFile} busy={busy} onWorking={setWorking} onState={onState} notify={notify} />
       <label className="import-file">
         导回 Lite：选择完整 ZIP 或加密 .orbis 文件
         <input
@@ -320,7 +327,22 @@ export function StoragePanel({
           type="file"
           accept=".zip,.orbis"
           disabled={busy || working}
-          onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+          onChange={async (e) => {
+            const file = e.target.files?.[0] ?? null
+            e.target.value = ''
+            if (!file) { return }
+            setImportFile(null)
+            if (file.name.toLowerCase().endsWith('.zip')) {
+              try {
+                const zip = await LocalZip.open(file)
+                if ([...zip.entries.keys()].some(n => /(^|\/)(chat_session_index|conversations)\.json$/.test(n))) {
+                  setDeepSeekFile(file)
+                  return
+                }
+              } catch { /* The Lite parser provides its format-specific error below. */ }
+            }
+            setImportFile(file)
+          }}
         />
       </label>
       {importFile && (

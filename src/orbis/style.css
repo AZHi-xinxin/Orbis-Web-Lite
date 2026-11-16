@@ -1308,3 +1308,11 @@ h1 {
 .call-original audio { width:100%; max-width:380px; margin-top:10px; }
 .call-original pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
 @media(max-height:650px) { .voice-call-screen { padding-top:8px; } .call-person { margin:8px 0; } .call-avatar { width:64px; height:64px; margin-bottom:5px; } .call-avatar img { width:48px; height:48px; } .call-person h1 { font-size:20px; margin:4px 0; } .call-phase { margin:8px 0; } .call-caption { min-height:140px; height:140px; } .call-caption-scroll { padding:12px 16px; } .call-turn-action { min-height:44px; } .call-controls { margin:8px 0; } .call-controls button { width:50px;height:50px; } .call-controls button.hangup { width:58px;height:58px; } }
+.deepseek-import { margin-block: 24px; }
+.deepseek-import-list { max-height: 340px; overflow: auto; margin-block: 12px; }
+.deepseek-import-item { padding: 12px 4px; border-bottom: 1px solid #8884; }
+.deepseek-import-item label { overflow-wrap: anywhere; }
+.deepseek-import select { max-width: 100%; }
+.deepseek-import input[type=file] { max-width: 100%; }
+.history-pages { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.history-pages span { flex-basis: 100%; font-size: 12px; opacity: .75; }

@@ -1,4 +1,4 @@
-# Orbis Web Lite — 0.1.0-alpha.10
+# Orbis Web Lite — 0.1.0-alpha.11
 
 单一 AI、多窗口的 Orbis 网页实验版，面向 iPhone、iPad 与桌面浏览器，不需要旁边运行安卓设备或登录 Orbis 社区。基于 [DeepSeek chat-demo](https://github.com/deepseek-ai/chat-demo) 的 Markdown、SSE 与音频录制组件，移植 Orbis 的记忆/压缩行为。
 
@@ -13,6 +13,8 @@
 5. 定期在「导入与导出 → 本地存储与备份」保存文件。**清除网站数据可能删除全部本地聊天，本站没有云端副本可找回。**
 
 手机是否要服务器、电脑是否要一直开着、清缓存的影响、Android 迁移、缓存与后台哨兵等问题，见 [完整 FAQ](docs/FAQ.zh-CN.md)。
+
+DeepSeek 官端 ZIP 可在「导入与导出 → 导入 DeepSeek 官端聊天」选择会话与分支。支持新版分会话包、旧版 conversations.json、空标题、长消息和变化的历史片段；大包按需读取，聊天按 80 条分页显示。可选恢复包内图片和音频，其他附件保留引用，原 ZIP 请继续保存。详见 [alpha.11 发布说明](docs/RELEASE-0.1.0-alpha.11.md)。
 
 ## 已接入
 
@@ -58,7 +60,7 @@ corepack pnpm dev
 
 测试浏览器可指定 `ORBIS_CHROME`、`ORBIS_TEST_OUTPUT`。`tests/browser_flow.py` 使用本地 18791 端口与模拟模型；`tests/browser_semantic.py` 使用真实本地 ONNX。先用 `python3 -m http.server 18791 --bind 127.0.0.1 --directory dist` 提供构建目录，再运行 Python Playwright 测试。`tests/browser_settings.py` 验证实际 UI 设置/工具与手册。测试数据全部合成，不含真实聊天、API Key 或私有服务器。
 
-浏览器测试还支持 `ORBIS_TEST_URL`；安装 Python Playwright 并执行 `python -m playwright install chromium` 后可用默认 Chromium，或用 `ORBIS_CHROME` 指定浏览器。类型检查、52 项逻辑测试与生产构建已通过；`pnpm lint` 仍有既有风格与 Hook 依赖问题，本次预发布不宣称 lint 全绿。详见 [alpha.10 发布说明](docs/RELEASE-0.1.0-alpha.10.md)。
+浏览器测试还支持 `ORBIS_TEST_URL`；安装 Python Playwright 并执行 `python -m playwright install chromium` 后可用默认 Chromium，或用 `ORBIS_CHROME` 指定浏览器。类型检查、61 项逻辑测试与生产构建已通过；`pnpm lint` 仍有既有风格与 Hook 依赖问题，本次预发布不宣称 lint 全绿。DS 浏览器导入回归见 `tests/browser_deepseek_import.py`，使用合成 ZIP，不需要私人导出包。
 
 ## 数据与凭证
 
