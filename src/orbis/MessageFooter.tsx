@@ -9,8 +9,8 @@ function Icon({ kind }: { kind: 'copy' | 'quote' | 'speaker' | 'more' }) {
   </svg>
 }
 
-export function MessageActions({ message: m, disabled, copy, quote, speak, revoke }: {
-  message: Message; disabled: boolean; copy: () => void; quote: () => void; speak: () => void; revoke: () => void
+export function MessageActions({ message: m, disabled, copy, quote, speak, revoke, branch }: {
+  message: Message; disabled: boolean; copy: () => void; quote: () => void; speak: () => void; revoke: () => void; branch: () => void
 }) {
   return <div className="message-actions" aria-label="消息操作">
     <button title="复制" aria-label="复制" onClick={copy} disabled={!m.text}><Icon kind="copy"/></button>
@@ -18,6 +18,7 @@ export function MessageActions({ message: m, disabled, copy, quote, speak, revok
     <details className="message-more">
       <summary title="更多操作" aria-label="更多操作"><Icon kind="more"/></summary>
       <div className="message-menu">
+        <button disabled={disabled} onClick={e => { branch(); e.currentTarget.closest('details')?.removeAttribute('open') }}>从此轮开启分支</button>
         <button onClick={e => { quote(); e.currentTarget.closest('details')?.removeAttribute('open') }}><Icon kind="quote"/>引用</button>
         {m.role === 'user' && !m.event && <button disabled={disabled} onClick={e => { revoke(); e.currentTarget.closest('details')?.removeAttribute('open') }}>撤回</button>}
       </div>

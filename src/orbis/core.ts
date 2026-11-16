@@ -70,6 +70,7 @@ export type Turn = {
   configuration?: { settings: State['settings']; conversation: ConversationSettings }
 }
 export type Compression = {
+  initiatedBy?: 'human'
   id: string
   at: number
   summaryId: string
@@ -81,6 +82,7 @@ export type Compression = {
   rolledBack: boolean
 }
 export type Window = {
+  forkedFrom?: { window: string; message: string; at: number }
   id: string
   title: string
   mode: Mode
@@ -465,7 +467,8 @@ export function compact(
   window: string,
   summary: string,
   keepRecent = 32,
-  activeTurn?: string
+  activeTurn?: string,
+  initiatedBy?: 'human'
 ): Compression {
   const w = windowOf(s, window)
   if (!summary.trim() || summary.length > 65536)
@@ -489,13 +492,15 @@ export function compact(
     before: tokens(textOf(w)),
     after: 0,
     rolledBack: false,
+    ...(initiatedBy ? { initiatedBy } : {}),
   }
-  if (s.settings.preserveBranch) {
+  if (s.settings.preserveBranch || initiatedBy === 'human') {
     const branch: Window = {
-      ...newWindow(w.title + ' · AI 压缩前原文', w.mode),
+      ...newWindow(w.title + ' · 压缩前原文', w.mode),
       messages: originals,
       archive: true,
       conversation: structuredClone(w.conversation),
+      voiceSessions: structuredClone(w.voiceSessions),
     }
     s.windows.push(branch)
     event.backupId = branch.id
@@ -505,7 +510,7 @@ export function compact(
       id: event.summaryId,
       turn: event.id,
       role: 'assistant',
-      text: '[之前对话的压缩摘要，不是逐字原文]\n' + summary,
+      text: (initiatedBy === 'human' ? '[人类确认应用的历史摘要，不是逐字原文或新的发言]\n' : '[之前对话的压缩摘要，不是逐字原文]\n') + summary,
       at: event.at,
       timeZone: captureClock(event.at).timeZone,
       status: 'done',

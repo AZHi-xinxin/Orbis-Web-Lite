@@ -1,4 +1,6 @@
 import { localTimestamp } from './clock.js'
+import { ContextActions } from './ContextActions.js'
+import { forkWindow } from './contextActions.js'
 import {
   registerVoiceHost,
   incomingCall,
@@ -487,6 +489,18 @@ export function App() {
     } finally {
       setSwitching(false)
     }
+  }
+  async function openBranch(message?: string) {
+    if (busyRef.current || voiceBusy || call || recording || switching) return
+    setSwitching(true)
+    let release: (() => Promise<void>) | undefined
+    try {
+      release = await acquire(w.id)
+      const result = await transact(s => forkWindow(s, w.id, message).id)
+      setState(result.state); setActive(result.result); setPanel('none'); setDrawer(false)
+      setNotice('已开启分支，原窗口保留；历史工具不会重新执行。')
+    } catch (e) { fail(e) }
+    finally { await release?.(); setSwitching(false) }
   }
   async function importAttachments(selected: FileList | null) {
     if (!selected) return
@@ -1032,7 +1046,7 @@ export function App() {
                   busy={busy} onRetry={() => void retryCallSummary(m.voiceSessionEnd!)} onReturn={() => setCallMinimized(false)} />
               ) : m.role === 'user' && m.event ? (
                 <SentinelTimeline message={m}>
-                  {!m.retracted && <MessageActions message={m} disabled={busy}
+                  {!m.retracted && <MessageActions message={m} disabled={busy} branch={() => void openBranch(m.id)}
                     quote={() => { setQuote(m.id); pendingFocus.current = true }}
                     copy={() => void navigator.clipboard.writeText(m.text).then(() => setNotice('已复制')).catch(fail)}
                     revoke={() => void revoke(m)} speak={() => void speak(m.text)} />}
@@ -1150,6 +1164,7 @@ export function App() {
                         <MessageActions
                           message={m}
                           disabled={busy}
+                          branch={() => void openBranch(m.id)}
                           quote={() => {
                             setQuote(m.id)
                             pendingFocus.current = true
@@ -1178,6 +1193,8 @@ export function App() {
           {notice && (
             <div className="notice" role="status">
               <span>{notice}</span>
+              {/context.*(?:length|limit)|reduce the length|上下文.*超/i.test(notice) &&
+                <button onClick={() => setPanel('context')}>打开手动压缩</button>}
               <button onClick={() => setNotice('')} aria-label="关闭提示">
                 ×
               </button>
@@ -1643,6 +1660,9 @@ export function App() {
             )}
             {panel === 'context' && (
               <>
+                <ContextActions key={w.id} window={w} disabled={busy || voiceBusy || call || recording || switching}
+                  onBusy={value => { busyRef.current = value; setBusy(value) }} onState={setState} onNotice={setNotice}
+                  onFork={() => void openBranch()} />
                 <div className="usage-number">
                   {used.toLocaleString()}
                   <small>估算 tokens</small>
@@ -1665,7 +1685,7 @@ export function App() {
                   />
                 </label>
                 <p className="subtle">
-                  达到 90% 时提醒 AI；是否及何时压缩由 AI 决定。阈值不改变模型的实际容量。
+                  达到 90% 时提醒 AI 自主压缩；也可使用上方手动压缩。阈值不改变模型的实际容量。
                 </p>
                 <label className="toggle">
                   <input
@@ -1678,7 +1698,7 @@ export function App() {
                       })
                     }}
                   />
-                  压缩前自动保存完整原文到新窗口
+                  AI 自主压缩前保存完整原文到新窗口（手动压缩始终保留）
                 </label>
                 <button
                   className="primary"

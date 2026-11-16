@@ -36,6 +36,7 @@ import {
 import { secret } from './storage.js'
 export type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 export type Output = {
+  truncated?: boolean
   web?: WebResult
   providerContent?: Record<string, unknown>[]
   serverToolCalls?: Record<string, unknown>[]
@@ -461,7 +462,7 @@ export async function streamModel(
         call.arguments += tc.function?.arguments ?? ''
         calls.set(tc.index, call)
       }
-      if (c?.finish_reason) complete = true
+      if (c?.finish_reason) { complete = true; out.truncated = c.finish_reason === 'length' }
     } else {
       if (e.type === 'content_block_start') {
         const block = e.content_block ?? {}
@@ -510,7 +511,7 @@ export async function streamModel(
         }
       }
       if (e.type === 'message_start') usage = mergeUsage(usage, e.message?.usage)
-      if (e.type === 'message_delta') usage = mergeUsage(usage, e.usage)
+      if (e.type === 'message_delta') { usage = mergeUsage(usage, e.usage); out.truncated = e.delta?.stop_reason === 'max_tokens' }
       if (e.type === 'message_stop') complete = true
     }
     out.calls = [...calls.values()]

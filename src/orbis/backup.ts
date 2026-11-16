@@ -138,6 +138,7 @@ export function restoreBackup(
       if (!eventMap.has(e.id)) eventMap.set(e.id, existingEvents.has(e.id) ? uid() : e.id)
     }
   for (const w of addedWindows) {
+    if (w.forkedFrom) w.forkedFrom.window = map.get(w.forkedFrom.window) ?? w.forkedFrom.window
     if (w.rollback) w.rollback.event = eventMap.get(w.rollback.event) ?? w.rollback.event
   }
   for (const w of addedWindows)
