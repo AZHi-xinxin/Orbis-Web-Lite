@@ -72,7 +72,15 @@ with sync_playwright() as p:
  page.evaluate(RESET)
  # Accept -> finish model -> opening TTS -> mic. AI can end its bound call without aborting generation.
  send('请来电，测试接听');expect(page.get_by_role('dialog',name='AI 来电')).to_be_visible();assert page.evaluate('micRequests')==0
- page.screenshot(path=str(OUT/'incoming.png'));page.get_by_role('button',name='接听',exact=True).click();done();expect(page.locator('.voice-call-screen')).to_contain_text('正在听',timeout=15000)
+ page.evaluate("""()=>{window.blockedPlays=0;window.playElements=[];const original=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){if(this.src.startsWith('blob:')){playElements.push(this);if(blockedPlays++===0)return Promise.reject(new DOMException('synthetic browser policy','NotAllowedError'))}return original.call(this)}}""")
+ page.screenshot(path=str(OUT/'incoming.png'));page.get_by_role('button',name='接听',exact=True).click();done()
+ expect(page.get_by_role('button',name='开启声音并播放',exact=True)).to_be_visible(timeout=15000)
+ assert page.evaluate('micRequests')==0
+ synthesized=len(speech);page.screenshot(path=str(OUT/'playback-recovery.png'))
+ page.get_by_role('button',name='开启声音并播放',exact=True).click()
+ expect(page.locator('.voice-call-screen')).to_contain_text('正在听',timeout=15000)
+ assert len(speech)==synthesized
+ assert page.evaluate('playElements.length===2 && playElements[0]===playElements[1]')
  assert page.evaluate('micRequests')==1;page.wait_for_timeout(500);page.locator('.voice-call-screen').get_by_role('button',name='说完了，发送本句').click()
  expect(page.locator('.voice-call-screen')).to_have_count(0,timeout=15000);done();assert page.evaluate('micStreams.every(s=>s.getTracks().every(t=>t.readyState==="ended"))')
  expect(page.locator('.voice-call-card')).to_have_count(1)
@@ -116,5 +124,5 @@ with sync_playwright() as p:
  # Human voice entry produces saved local audio; default model response remains text.
  page.get_by_role('button',name='录制语音条',exact=True).click();expect(page.locator('.recording-strip')).to_be_visible();page.wait_for_timeout(500);page.get_by_role('button',name='取消录音',exact=True).click();expect(page.locator('.recording-strip')).to_have_count(0)
  page.screenshot(path=str(OUT/'voice-history.png'));assert not errors,errors
- result={'passed':True,'requests':len(requests),'speech':speech,'page_errors':errors,'checks':['one-row 320/390/768/1280','collapse persisted','thought disabled hidden and unsent draft retained','AI voice generated saved playable after reload','reject no microphone','cooldown','accept opening then microphone','AI bound hangup','one isolated summary','raw audio retained','manual call','minimize restores','mic and speaker controls','empty call no model request','4 viewport call controls','refresh no summary replay','stop ringing','timeout','reload no redial','human recording entry and cancel']}
+ result={'passed':True,'requests':len(requests),'speech':speech,'page_errors':errors,'checks':['one-row 320/390/768/1280','collapse persisted','thought disabled hidden and unsent draft retained','AI voice generated saved playable after reload','reject no microphone','cooldown','accept opening then microphone','blocked playback resumes the same element with no extra TTS','AI bound hangup','one isolated summary','raw audio retained','manual call','minimize restores','mic and speaker controls','empty call no model request','4 viewport call controls','refresh no summary replay','stop ringing','timeout','reload no redial','human recording entry and cancel']}
  (OUT/'result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2));print(json.dumps(result,ensure_ascii=False));b.close()

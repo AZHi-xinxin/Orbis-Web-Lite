@@ -106,6 +106,11 @@ export function App() {
     [voicePhase, setVoicePhase] = useState(''),
     [attachmentsOpen, setAttachmentsOpen] = useState(false)
   const [invitation, setInvitation] = useState<Invitation | undefined>()
+  const [resumeAudio, setResumeAudio] = useState<(() => void) | undefined>()
+  function playbackGate(resume: (() => void) | undefined) {
+    setResumeAudio(() => resume)
+    if (resume) { setVoicePhase('轻点开启声音') }
+  }
   const acceptedCall = useRef<Invitation | undefined>(undefined)
   const activeSession = useRef<{ window: string; id: string } | undefined>()
   const pendingCallArchive = useRef<{ window: string; id: string; endedAt: number } | undefined>()
@@ -434,8 +439,10 @@ export function App() {
       if (reply?.text && !speakerMuted.current) {
         setVoicePhase('准备朗读')
         await speakText(reply.text, latest.settings, controller.signal, () =>
-          setVoicePhase('正在说')
-        )
+          setVoicePhase('正在说'), playbackGate
+        ).catch((error) => {
+          if (!(error instanceof DOMException && error.name === 'AbortError') || controller.signal.aborted) { throw error }
+        })
       }
       if (!controller.signal.aborted && callRef.current) await beginRecord()
     } catch (e) {
@@ -579,6 +586,7 @@ export function App() {
   function toggleCallSpeaker() {
     speakerMuted.current = !speakerMuted.current; setCallSpeakerMuted(speakerMuted.current)
     if (speakerMuted.current) stopSpeech()
+    else { prepareSpeech() }
   }
   useEffect(() => {
     if (
@@ -682,7 +690,7 @@ export function App() {
           setVoicePhase('准备朗读')
           try {
             await speakText(reply.text, latest.settings, controller.signal, () =>
-              setVoicePhase('正在说')
+              setVoicePhase('正在说'), playbackGate
             )
           } catch (e) {
             if (!(e instanceof DOMException && e.name === 'AbortError')) throw e
@@ -712,7 +720,7 @@ export function App() {
   async function speak(text: string): Promise<void> {
     try {
       prepareSpeech()
-      await speakText(text, state.settings)
+      await speakText(text, state.settings, undefined, undefined, playbackGate)
     } catch (e) {
       if (!(e instanceof DOMException && e.name === 'AbortError')) fail(e)
     }
@@ -1177,12 +1185,16 @@ export function App() {
               </button>
             </div>
           )}
+          {resumeAudio && !call && <div className="storage-reminder" role="status">
+            <span>浏览器暂停了声音，文字已保留。</span><button onClick={resumeAudio}>开启声音并播放</button>
+            <button onClick={stopSpeech}>取消播放</button>
+          </div>}
           {call && (
             <CallPanel name={state.settings.name} deepseek={deepseek} minimized={callMinimized}
               startedAt={w.voiceSessions?.find((c) => c.id === activeSession.current?.id)?.startedAt ?? Date.now()}
               phase={voicePhase || (recording ? '正在听' : '准备下一句')} recording={recording}
               caption={partial?.text || w.messages.filter((m) => m.voiceSessionId === activeSession.current?.id && m.role !== 'tool' && !m.voiceCall && !m.calls?.length).at(-1)?.text || '接通了，随时开口。'}
-              micMuted={callMicMuted} speakerMuted={callSpeakerMuted}
+              micMuted={callMicMuted} speakerMuted={callSpeakerMuted} onResumeAudio={resumeAudio}
               onMinimize={() => setCallMinimized(true)} onExpand={() => setCallMinimized(false)}
               onMic={toggleCallMic} onSpeaker={toggleCallSpeaker} onHangup={() => hangup()}
               onFinish={() => void finishRecord()} onInterrupt={() => { stopSpeech(); setVoicePhase('准备下一句') }} />

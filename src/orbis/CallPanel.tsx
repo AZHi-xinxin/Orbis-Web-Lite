@@ -14,6 +14,7 @@ type PanelProps = {
   name: string; deepseek: boolean; startedAt: number; minimized: boolean; phase: string; caption: string
   recording: boolean; micMuted: boolean; speakerMuted: boolean
   onMinimize: () => void; onExpand: () => void; onMic: () => void; onSpeaker: () => void
+  onResumeAudio?: () => void
   onHangup: () => void; onFinish: () => void; onInterrupt: () => void
 }
 export function CallPanel(p: PanelProps) {
@@ -35,7 +36,7 @@ export function CallPanel(p: PanelProps) {
     </div>
     <div className="call-caption" aria-label="当前通话字幕">{p.caption}</div>
     <div className="call-turn-action">
-      {p.recording ? <button onClick={p.onFinish}>说完了，发送本句</button> : p.phase === '正在说' ? <button onClick={p.onInterrupt}>打断本条播报</button> : <span>停顿后自动发送，也可以手动结束本句</span>}
+      {p.onResumeAudio ? <button onClick={p.onResumeAudio}>开启声音并播放</button> : p.recording ? <button onClick={p.onFinish}>说完了，发送本句</button> : p.phase === '正在说' ? <button onClick={p.onInterrupt}>打断本条播报</button> : <span>停顿后自动发送，也可以手动结束本句</span>}
     </div>
     <div className="call-controls">
       <div><button className={p.micMuted ? 'is-muted' : ''} onClick={p.onMic} aria-pressed={p.micMuted} aria-label={p.micMuted ? '打开麦克风' : '关闭麦克风'}><CallIcon kind="mic" /></button><span>{p.micMuted ? '麦克风已关' : '关闭麦克风'}</span></div>

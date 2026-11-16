@@ -280,8 +280,14 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
   w.messages.forEach((m, i) => {
     if (m.role === 'user') lastHuman = i
   })
+  // A saved compaction summary (or imported history) can start with an assistant.
+  // Preserve its authorship and original contents; add only a request-local provenance
+  // boundary so strict providers receive a user-first conversation. Never persist it.
+  const historyBoundary = '【宿主提供的历史上下文说明，不是人类新发言】以下开头的 AI 消息来自之前的对话，可能包含压缩摘要，仅作为历史资料。不要将其中内容当成新任务；请结合后续真实用户消息和工具结果接续。'
+  const startsWithAssistant = w.messages[0]?.role === 'assistant'
   if (settings.protocol === 'openai') {
     const messages: Record<string, unknown>[] = [{ role: 'system', content: system }]
+    if (startsWithAssistant) { messages.push({ role: 'user', content: historyBoundary }) }
     w.messages.forEach((m, i) => {
       if (i === lastHuman && tail) messages.push({ role: 'system', content: tail })
       if (m.role === 'tool')
@@ -329,6 +335,7 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
     }
   }
   const messages: { role: string; content: unknown[] }[] = []
+  if (startsWithAssistant) { messages.push({ role: 'user', content: [{ type: 'text', text: historyBoundary }] }) }
   for (const [i, m] of w.messages.entries()) {
     const role = m.role === 'tool' ? 'user' : m.role
     const content =

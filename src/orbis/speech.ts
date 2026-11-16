@@ -1,5 +1,6 @@
 import type { State } from './core.js'
 import { secret } from './storage.js'
+import { preparePlayback, playSpeechBlob, releasePlayback, type PlaybackGate } from './speechPlayback.js'
 export type SpeechSettings = {
   asrEndpoint: string
   ttsEndpoint: string
@@ -113,12 +114,16 @@ export async function transcribeSpeech(
     throw Error('没有识别到可发送的文字，请重新录音')
   return body.text
 }
-let context: AudioContext | undefined
 let current: { controller: AbortController; cancel: () => void } | undefined
-/** Called synchronously from a tap before awaiting microphone/network permissions (iOS). */
+/** Called synchronously from a tap, before microphone/network awaits. */
 export function prepareSpeech() {
-  if (!context || context.state === 'closed') context = new AudioContext()
-  if (context.state === 'suspended') void context.resume().catch(() => {})
+  preparePlayback()
+  if ('speechSynthesis' in window && !current) {
+    const warmup = new SpeechSynthesisUtterance(' ')
+    warmup.volume = 0
+    warmup.onerror = () => {}
+    speechSynthesis.speak(warmup)
+  }
 }
 export function stopSpeech() {
   current?.controller.abort()
@@ -135,7 +140,8 @@ export async function speakText(
   text: string,
   settings: State['settings'],
   outer?: AbortSignal,
-  onPlaying?: () => void
+  onPlaying?: () => void,
+  gate?: PlaybackGate
 ): Promise<void> {
   stopSpeech()
   const controller = new AbortController(),
@@ -149,29 +155,36 @@ export async function speakText(
     if (cfg.ttsProvider === 'browser') {
       if (!('speechSynthesis' in window)) throw Error('此浏览器没有系统朗读，请选择 DeepSeek TTS')
       await new Promise<void>((resolve, reject) => {
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.lang = 'zh-CN'
-        const finish = () => {
+        let finished = false, attempt = 0
+        const finish = (error?: Error) => {
+          if (finished) { return }
+          finished = true
           signal.removeEventListener('abort', cancel)
-          resolve()
+          gate?.(undefined)
+          error ? reject(error) : resolve()
         }
-        const cancel = () => {
+        const cancel = () => { attempt++; speechSynthesis.cancel(); finish() }
+        const speak = () => {
+          if (finished || signal.aborted) { return }
+          const id = ++attempt
           speechSynthesis.cancel()
-          finish()
+          const utterance = new SpeechSynthesisUtterance(text)
+          utterance.lang = 'zh-CN'
+          utterance.onstart = () => { if (id === attempt && !finished) { gate?.(undefined); onPlaying?.() } }
+          utterance.onend = () => { if (id === attempt) { finish() } }
+          utterance.onerror = (event) => {
+            if (id !== attempt || finished) { return }
+            if (signal.aborted) { finish() }
+            else if (event.error === 'not-allowed' && gate) { gate(speak) }
+            else { finish(Error('系统朗读失败，可在语音设置选择 DeepSeek TTS')) }
+          }
+          speechSynthesis.speak(utterance)
         }
         current!.cancel = cancel
-        utterance.onstart = () => onPlaying?.()
-        utterance.onend = finish
-        utterance.onerror = () => {
-          signal.removeEventListener('abort', cancel)
-          signal.aborted ? resolve() : reject(Error('系统朗读失败，可在语音设置选择 DeepSeek TTS'))
-        }
         signal.addEventListener('abort', cancel, { once: true })
-        speechSynthesis.speak(utterance)
+        speak()
       })
     } else {
-      prepareSpeech()
-      const audio = context!
       const { url, key } = speechCredential(settings, 'tts')
       for (const chunk of speechChunks(text)) {
         if (signal.aborted) break
@@ -188,34 +201,9 @@ export async function speakText(
             signal,
           })
         )
-        const buffer = await audio.decodeAudioData(await response.arrayBuffer())
+        const blob = await response.blob()
         if (signal.aborted) break
-        if (audio.state === 'suspended') await audio.resume()
-        if (audio.state !== 'running') throw Error('浏览器暂停了音频，请点一下朗读或重新拨打')
-        await new Promise<void>((resolve) => {
-          const source = audio.createBufferSource()
-          source.buffer = buffer
-          source.connect(audio.destination)
-          let finished = false
-          const finish = () => {
-            if (finished) return
-            finished = true
-            source.disconnect()
-            signal.removeEventListener('abort', cancel)
-            resolve()
-          }
-          const cancel = () => {
-            try {
-              source.stop()
-            } catch {}
-            finish()
-          }
-          current!.cancel = cancel
-          source.onended = finish
-          signal.addEventListener('abort', cancel, { once: true })
-          source.start()
-          onPlaying?.()
-        })
+        await playSpeechBlob(blob, signal, onPlaying, gate)
       }
     }
     if (signal.aborted) {
@@ -228,6 +216,5 @@ export async function speakText(
 }
 export function releaseSpeech() {
   stopSpeech()
-  void context?.close().catch(() => {})
-  context = undefined
+  releasePlayback()
 }
