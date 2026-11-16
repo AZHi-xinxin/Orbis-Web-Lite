@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
 
+const appBase = process.env.ORBIS_WEB_BASE ?? '/'
+if (!/^\/(?:[a-zA-Z0-9_-]+\/)*$/.test(appBase)) throw Error('Invalid ORBIS_WEB_BASE')
 const dev = process.env.NODE_ENV !== 'production'
 const targets = ['chrome >= 105', 'edge >= 105', 'safari >= 16', 'firefox >= 110']
 const root = path.dirname(fileURLToPath(import.meta.url))
@@ -80,7 +82,7 @@ export const createConfig = ({
       scriptLoading: 'defer',
       meta: { 'application-version': version },
     }),
-    new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) }),
+    new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin), __APP_BASE__: JSON.stringify(appBase) }),
     new rspack.CopyRspackPlugin({
       patterns: [
         { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },

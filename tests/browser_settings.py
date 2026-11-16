@@ -13,7 +13,7 @@ def route(r):
 with sync_playwright() as p:
  b=p.chromium.launch(executable_path='/home/xinxin/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome',headless=True,args=['--no-sandbox'])
  page=b.new_page(viewport={'width':390,'height':844});errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.route('https://api.deepseek.com/anthropic/v1/messages',route)
- page.goto('http://127.0.0.1:18791');page.get_by_role('button',name='设置',exact=True).click()
+ page.goto(os.environ.get('ORBIS_TEST_URL','http://127.0.0.1:18791'));page.get_by_role('button',name='设置',exact=True).click()
  page.get_by_label('API Key',exact=True).fill('synthetic-not-a-key');page.get_by_label('本窗口补充提示词',exact=True).fill('当前窗口的人设补充');page.get_by_label('本窗口世界书',exact=True).fill('旧的世界书背景');page.get_by_label('允许 AI 修改本窗口提示词和世界书',exact=True).check()
  page.get_by_label('温度',exact=True).fill('0.7');page.get_by_label('Top-P',exact=True).fill('0.8');page.get_by_label('思考等级',exact=True).select_option('off');page.get_by_label('上下文最近轮数',exact=True).fill('1');page.get_by_role('button',name='关闭面板').click()
  def send(text):

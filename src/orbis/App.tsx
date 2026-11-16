@@ -1,3 +1,4 @@
+import { assetUrl } from './assets.js'
 import { manual } from './help.js'
 import {
   defaultConversation,
@@ -82,6 +83,12 @@ export function App() {
     [ruleAt, setRuleAt] = useState(''),
     [ruleKind, setRuleKind] = useState<'once' | 'interval' | 'daily'>('once'),
     [ruleInterval, setRuleInterval] = useState('60')
+  const [windowQuery, setWindowQuery] = useState('')
+  const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  const appearance = state.settings.appearance ?? 'orbis'
+  const colorMode = state.settings.colorMode ?? (state.settings.dark ? 'dark' : 'light')
+  const dark = colorMode === 'system' ? systemDark : colorMode === 'dark'
+  const deepseek = appearance === 'deepseek'
   const [switching, setSwitching] = useState(false)
   const pendingChanges = useRef(0)
   const setState = (next: State) => {
@@ -157,8 +164,16 @@ export function App() {
     }
   }, [])
   useEffect(() => {
-    document.documentElement.dataset.orbisTheme = state.settings.dark ? 'dark' : 'light'
-  }, [state.settings.dark])
+    const media = matchMedia('(prefers-color-scheme: dark)')
+    const update = () => setSystemDark(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+  useEffect(() => {
+    document.documentElement.dataset.orbisTheme = dark ? 'dark' : 'light'
+    document.documentElement.dataset.appearance = appearance
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', deepseek ? (dark ? '#1a1a1a' : '#ffffff') : (dark ? '#171f1c' : '#f5f2ec'))
+  }, [dark, appearance])
   useLayoutEffect(() => {
     if (!w) return
     if (draftWindow.current) {
@@ -457,10 +472,10 @@ export function App() {
   const shown = w?.messages.map((m) => (partial?.id === m.id ? partial : m)) ?? []
   if (!ready) return <div className="loading">✦ 正在打开你的 Orbis…</div>
   return (
-    <div className={'orbis ' + state.settings.style}>
+    <div className={'orbis ' + state.settings.style + (deepseek ? ' deepseek' : '')}>
       <aside className={'sidebar ' + (drawer ? 'open' : '')}>
         <div className="brand">
-          <span className="orb">✦</span>
+          <span className="orb">{deepseek ? <img src={assetUrl('deepseek.svg')} alt="" /> : '✦'}</span>
           <div>
             Orbis <small>WEB LITE · 实验版</small>
           </div>
@@ -471,9 +486,13 @@ export function App() {
         <button disabled={switching} className="new-window" onClick={() => void addWindow()}>
           ＋ 开一个新窗口
         </button>
-        <div className="section-caption">同一个你，不同的片刻</div>
+        <label className="window-search">
+          <span aria-hidden="true">⌕</span><input aria-label="搜索对话" placeholder="搜索对话内容…" value={windowQuery} onChange={e => setWindowQuery(e.target.value)} />
+        </label>
+        <div className="section-caption">{windowQuery ? '搜索结果' : '最近对话'}</div>
         <nav className="windows">
           {[...state.windows]
+            .filter(x => !windowQuery.trim() || (x.title + '\n' + x.messages.filter(m => !m.retracted).map(m => m.text).join('\n')).toLocaleLowerCase().includes(windowQuery.trim().toLocaleLowerCase()))
             .sort((a, b) => b.at - a.at)
             .map((x) => (
               <button
@@ -510,16 +529,17 @@ export function App() {
       <main>
         <header>
           <button className="mobile-only" onClick={() => setDrawer(true)} aria-label="打开窗口列表">
-            ☰
+            <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M4 7h16M4 16h10" /></svg>
           </button>
           <div className="identity">
-            <span className="avatar">✦</span>
+            <span className="avatar">{deepseek ? <img src={assetUrl('deepseek.svg')} alt="" /> : '✦'}</span>
             <div>
               <strong>{state.settings.name}</strong>
               <small>{w?.title}</small>
             </div>
           </div>
           <div className="header-actions">
+            <button className="header-new" onClick={() => void addWindow()} disabled={switching} aria-label="新建对话"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-4.7A8.5 8.5 0 1 1 20 11.5Z"/><path d="M8 11.5h8M12 7.5v8"/></svg></button>
             <button
               className="budget"
               onClick={() => setPanel('context')}
@@ -569,46 +589,15 @@ export function App() {
           </select>
           <span>{w.mode === 'light' ? '存查仅限本窗口' : '同一记忆库 · 可随时存查'}</span>
         </div>
-        <div className="messages" ref={listRef}>
+        <div className={"messages" + (!shown.length ? " is-empty" : "")} ref={listRef}>
           {!state.settings.tutorialSeen && (
-            <div className="info welcome-guide">
-              <strong>第一次来到 Orbis？</strong>
-              <p>先连接模型，再试试存一条记忆、开一个新窗口。</p>
-              <button onClick={() => setPanel('help')}>打开使用教程</button>
-              <button
-                onClick={() =>
-                  void change((s) => {
-                    s.settings.tutorialSeen = true
-                  })
-                }
-              >
-                知道了
-              </button>
-            </div>
+            <div className="first-guide"><button onClick={() => setPanel('help')}>第一次使用？查看连接与记忆指引 ↗</button><button aria-label="收起入门提示" onClick={() => void change(s => { s.settings.tutorialSeen = true })}>×</button></div>
           )}
           {!shown.length && (
             <div className="welcome">
-              <div className="welcome-orb">✦</div>
-              <h1>
-                换一个窗口，
-                <br />
-                也能接着聊。
-              </h1>
-              <p>
-                值得留下的事，放进记忆里。
-                <br />
-                从这一句话开始。
-              </p>
-              <div className="suggestions">
-                <button onClick={() => setDraft('请把这件事存进记忆库：')}>记住一件事 ↗</button>
-                <button
-                  onClick={() => {
-                    setPanel('memory')
-                  }}
-                >
-                  看看记忆库 ↗
-                </button>
-              </div>
+              <div className="welcome-orb">{deepseek ? <img src={assetUrl('deepseek.svg')} alt="DeepSeek" /> : '✦'}</div>
+              {deepseek ? <h1>你好，有什么我能帮你的吗？</h1> : <><h1>换一个窗口，<br />也能接着聊。</h1><p>值得留下的事，放进记忆里。<br />从这一句话开始。</p></>}
+              {!deepseek && <div className="suggestions"><button onClick={() => setDraft('请把这件事存进记忆库：')}>记住一件事 ↗</button><button onClick={() => setPanel('memory')}>看看记忆库 ↗</button></div>}
             </div>
           )}
           {shown.map((m) => (
@@ -661,7 +650,7 @@ export function App() {
                           <p>{m.reasoning}</p>
                         </details>
                       )}
-                      {bubbles(m.text, state.settings.split && m.role === 'assistant').map(
+                      {bubbles(m.text, state.settings.split && m.role === 'assistant').filter(part => part.trim() || (m.status === 'working' && !m.calls?.length)).map(
                         (part, i) => (
                           <div className="bubble" key={i}>
                             {part ? (
@@ -779,7 +768,7 @@ export function App() {
             <textarea
               disabled={switching}
               aria-label="输入消息"
-              placeholder="想说的话，慢慢说…"
+              placeholder={deepseek ? "发消息，或点击语音说话" : "想说的话，慢慢说…"}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -795,7 +784,8 @@ export function App() {
               }}
             />
             <div className="composer-tools">
-              <label className="attach" title="添加图片">
+              {deepseek && <button className={'reasoning-toggle ' + (options.reasoning !== 'off' ? 'enabled' : '')} aria-label="深度思考" aria-pressed={options.reasoning !== 'off'} onClick={() => setOption('reasoning', options.reasoning === 'off' ? 'high' : 'off')} title="切换 AI 深度思考；具体能力取决于所选模型"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(45 12 12)"/><ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(-45 12 12)"/><circle cx="12" cy="12" r="1"/></svg>深度思考</button>}
+              <label className="attach" title="添加图片" aria-label="添加图片">
                 ＋
                 <input
                   type="file"
@@ -805,13 +795,14 @@ export function App() {
                 />
               </label>
               <button
-                className={thoughtOn ? 'enabled' : ''}
+                className={'human-thought ' + (thoughtOn ? 'enabled' : '')}
                 onClick={() => setThoughtOn((x) => !x)}
                 aria-pressed={thoughtOn}
               >
                 思考链
               </button>
               <button
+                className="voice-button"
                 disabled={voiceBusy || (busy && !recording)}
                 onClick={() => void (recording ? finishRecord() : beginRecord())}
               >
@@ -842,7 +833,7 @@ export function App() {
           </div>
           <div className="composer-foot">
             Orbis Web Lite · 数据保存在此浏览器 ·{' '}
-            <button onClick={() => setPanel('backup')}>导出留存</button>
+            <button onClick={() => setPanel('backup')}>导出留存</button> · <a href={assetUrl('source.tar.gz')} download>源码</a>
           </div>
         </div>
       </main>
@@ -1311,6 +1302,10 @@ export function App() {
                 </p>
                 <button onClick={() => setPanel('mcp')}>连接 MCP 与选择工具 →</button>
                 <h3>聊天外观</h3>
+                <label>界面主题<select aria-label="界面主题" value={appearance} onChange={e => { const value = e.target.value as 'orbis' | 'deepseek'; void change(s => { s.settings.appearance = value }) }}><option value="deepseek">DeepSeek · 简约蓝（仿官端）</option><option value="orbis">Orbis · 星夜</option></select></label>
+                <p className="subtle">简约蓝沿用 Orbis 的仿官端配色；这里只切换外观，模型和记忆保持不变。此网页由 Orbis 提供。</p>
+                <label>显示模式<select aria-label="显示模式" value={colorMode} onChange={e => { const value = e.target.value as 'light' | 'dark' | 'system'; void change(s => { s.settings.colorMode = value; s.settings.dark = value === 'dark' }) }}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">夜间</option></select></label>
+                <h3>气泡样式</h3>
                 <div className="style-grid">
                   {Object.entries(styles).map(([value, label]) => (
                     <button
@@ -1340,19 +1335,6 @@ export function App() {
                     }}
                   />
                   按段落分割 AI 气泡
-                </label>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={state.settings.dark}
-                    onChange={(e) => {
-                      const checked = e.target.checked
-                      void change((s) => {
-                        s.settings.dark = checked
-                      })
-                    }}
-                  />
-                  夜间模式
                 </label>
                 <div className="info">
                   网页版实验阶段：记忆库、压缩和基础工具已接入；关页后台哨兵尚未接入；语义召回的

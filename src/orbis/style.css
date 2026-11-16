@@ -911,3 +911,101 @@ h1 {
 .welcome-guide button {
   margin-right: 12px;
 }
+
+/* Shared with Android OrbisPalette.DeepSeekLight / DeepSeekDark. */
+:root[data-appearance='deepseek'] {
+  --page: #ffffff; --panel: #ffffff; --side: #f7f7f8;
+  --ink: #171717; --muted: #686b73; --line: #e1e3e8;
+  --green: #3b63d9; --soft: #edf2ff; --gold: #3b63d9;
+  --user-bubble: #f0f1f3; --on-accent: #ffffff;
+}
+:root[data-appearance='deepseek'][data-orbis-theme='dark'] {
+  --page: #1a1a1a; --panel: #232323; --side: #232323;
+  --ink: #f0f0f0; --muted: #b0b0b0; --line: #414141;
+  --green: #89a7ff; --soft: #2b344b; --gold: #89a7ff;
+  --user-bubble: #303030; --on-accent: #102552;
+}
+.orb img { width: 35px; height: 35px; display: block; }
+.avatar img { width: 28px; height: 28px; }
+.window-search { position: relative; display: flex; align-items: center; margin: 22px 0 0; }
+.window-search span { position: absolute; left: 13px; font-size: 25px; color: var(--muted); }
+.window-search input { padding: 12px 12px 12px 40px; font-size: 13px; border-radius: 24px; background: var(--page); }
+.window-search + .section-caption { margin-top: 24px; }
+.first-guide { display: flex; justify-content: center; gap: 4px; color: var(--muted); margin: 2px auto 10px; font-size: 12px; }
+.first-guide button { padding: 7px 6px; }
+.header-new { display: flex; align-items: center; justify-content: center; }
+.deepseek { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft Yahei', system-ui, sans-serif; }
+.deepseek .brand { font: 600 22px system-ui; letter-spacing: 0; gap: 10px; margin-bottom: 26px; }
+.deepseek .brand small { font-size: 9px; letter-spacing: 1px; font-weight: 400; color: var(--muted); }
+.deepseek .sidebar { border-right: 0; width: 272px; padding: 25px 20px 18px; }
+.deepseek .new-window { background: var(--soft); border: 1px solid transparent; color: var(--green); border-radius: 14px; font-size: 14px; }
+.deepseek .windows button { border-radius: 12px; padding: 13px 12px; margin-bottom: 3px; }
+.deepseek .windows small { margin-left: 0; opacity: .7; }
+.deepseek .side-bottom { font-size: 13px; }
+.deepseek header { height: 72px; border: 0; background: var(--page); padding: 12px 30px; }
+.deepseek header .identity .avatar { display: none; }
+.deepseek .header-actions button { font-size: 21px; }
+.deepseek .header-actions .budget, .deepseek .budget svg { width: 36px; height: 36px; }
+.deepseek .mode-bar { padding: 4px 30px 7px; gap: 12px; }
+.deepseek .mode-bar select { background: transparent; border: 1px solid var(--line); color: var(--muted); padding: 5px 8px; font-size: 11px; }
+.deepseek .mode-bar span { font-size: 10px; }
+.deepseek .messages { padding-top: 12px; }
+.deepseek .messages.is-empty { display: flex; flex-direction: column; }
+.deepseek .welcome { flex: 1; width: 100%; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; padding-bottom: 55px; }
+.deepseek .welcome-orb { margin: 0 auto; border: 0; background: none; width: 64px; height: 64px; }
+.deepseek .welcome-orb img { width: 64px; height: 64px; }
+.deepseek .welcome h1 { font: 600 clamp(20px, 2.3vw, 28px)/1.6 -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft Yahei', sans-serif; letter-spacing: 0; margin: 21px 0 0; }
+.deepseek .message { gap: 7px; margin-bottom: 28px; }
+.deepseek.silk .assistant .bubble { border: 0; border-radius: 0; background: transparent; padding: 3px 0; max-width: 100%; }
+.deepseek .user .bubble { background: var(--user-bubble); border: 0; border-radius: 21px; padding: 12px 18px; }
+.deepseek .speaker { font-size: 10px; }
+.deepseek .thought { border-left: 2px solid var(--line); margin: 4px 0; border-radius: 0; }
+.deepseek .composer { border-radius: 26px; padding: 13px 16px; box-shadow: 0 5px 22px #00000008; }
+.deepseek .composer > textarea { min-height: 60px; }
+.deepseek .composer-tools { gap: 8px; }
+.deepseek .composer-tools > span { order: 2; }
+.deepseek .composer-tools .reasoning-toggle { display: flex; align-items: center; gap: 5px; order: 0; }
+.deepseek .composer-tools .human-thought { order: 1; }
+.deepseek .composer-tools .reasoning-toggle, .deepseek .composer-tools .human-thought { border: 1px solid var(--line); border-radius: 22px; padding: 7px 10px; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.deepseek .composer-tools .enabled { color: var(--green); border-color: color-mix(in srgb, var(--green) 25%, var(--line)); background: var(--soft); }
+.deepseek .attach { order: 3; padding: 0 4px; color: var(--ink); }
+.deepseek .voice-button { order: 4; padding: 7px 5px; white-space: nowrap; }
+.deepseek .send { order: 5; color: var(--on-accent); border-radius: 50%; width: 35px; min-width: 35px; height: 35px; }
+.deepseek .send:has(+ *) { width: auto; }
+.deepseek .send:not([aria-label]) { width: auto; border-radius: 20px; font-size: 12px; }
+.deepseek .primary { color: var(--on-accent); }
+.deepseek .composer-foot { font-size: 10px; opacity: .85; }
+.deepseek .panel { border-radius: 20px; }
+@media (max-width: 760px) {
+  .deepseek .sidebar { width: min(330px, 87vw); padding-top: max(25px, env(safe-area-inset-top)); background: var(--page); box-shadow: 5px 0 25px #00000012; }
+  .deepseek .window-search input { font-size: 16px; background: var(--user-bubble); border-color: transparent; }
+  .deepseek header { padding: max(12px, env(safe-area-inset-top)) 14px 12px; height: auto; min-height: 65px; }
+  .deepseek .identity strong { font-size: 14px; }
+  .deepseek .identity small { max-width: 22vw; font-size: 10px; }
+  .deepseek .header-actions { gap: 0; }
+  .deepseek .header-actions .budget { width: 33px; height: 33px; }
+  .deepseek .budget svg { width: 33px; }
+  .deepseek .mode-bar { padding: 0 18px 6px; }
+  .deepseek .mode-bar span { display: none; }
+  .deepseek .messages { padding: 12px 19px 20px; }
+  .deepseek .welcome { padding-bottom: 30px; }
+  .deepseek .welcome-orb, .deepseek .welcome-orb img { width: 51px; height: 51px; }
+  .deepseek .welcome h1 { font-size: 20px; margin-top: 22px; white-space: normal; }
+  .deepseek .first-guide { font-size: 10px; margin: 0; }
+  .deepseek .composer-area { padding: 5px 12px max(8px, env(safe-area-inset-bottom)); }
+  .deepseek .composer { border-radius: 25px; padding: 13px 12px 11px; }
+  .deepseek .composer > textarea { min-height: 56px; font-size: 16px; }
+  .deepseek .composer-tools { gap: 4px; }
+  .deepseek .composer-tools .reasoning-toggle, .deepseek .composer-tools .human-thought { padding: 7px 8px; font-size: 11px; }
+  .deepseek .voice-button { font-size: 11px; }
+  .deepseek .composer-foot { font-size: 8px; padding-top: 8px; }
+  .deepseek .panel { border-radius: 22px 22px 0 0; }
+}
+@media (max-width: 355px) {
+  .deepseek .composer-tools { gap: 2px; }
+  .deepseek .composer-tools .reasoning-toggle svg { display: none; }
+  .deepseek header .identity small { display: none; }
+}
+
+.composer-foot a { color: inherit; text-decoration: none; }
+.composer-foot a:hover { text-decoration: underline; }

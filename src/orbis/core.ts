@@ -125,6 +125,8 @@ export type State = {
     split: boolean
     style: 'silk' | 'glass' | 'stars' | 'book'
     dark: boolean
+    appearance?: 'orbis' | 'deepseek'
+    colorMode?: 'light' | 'dark' | 'system'
     sentinelEnabled: boolean
     semantic?: boolean
     generation?: GenerationOptions
@@ -165,6 +167,8 @@ export const initialState = (): State => ({
     split: true,
     style: 'silk',
     dark: false,
+    appearance: 'deepseek',
+    colorMode: 'system',
     sentinelEnabled: false,
     semantic: true,
   },

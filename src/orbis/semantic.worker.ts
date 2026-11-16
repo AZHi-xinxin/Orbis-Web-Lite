@@ -1,3 +1,4 @@
+import { assetUrl } from './assets.js'
 import * as ort from 'onnxruntime-web/wasm'
 import { normalize, similarity, wordpiece } from './wordpiece.js'
 type Chunk = { id: string; revision: number; eventId: string; text: string }
@@ -17,14 +18,14 @@ async function init() {
   if (session) return
   ort.env.wasm.numThreads = 1
   ort.env.wasm.proxy = false
-  ort.env.wasm.wasmPaths = new URL('/ort/', self.location.origin).href
+  ort.env.wasm.wasmPaths = new URL(assetUrl('ort/'), self.location.origin).href
   const [model, vocab] = await Promise.all([
     checked(
-      '/memory/model.onnx',
+      assetUrl('memory/model.onnx'),
       '15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc'
     ),
     checked(
-      '/memory/vocab.txt',
+      assetUrl('memory/vocab.txt'),
       '45bbac6b341c319adc98a532532882e91a9cefc0329aa57bac9ae761c27b291c'
     ),
   ])
