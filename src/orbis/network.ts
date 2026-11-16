@@ -1,3 +1,4 @@
+import { boundCall } from './voiceHost.js'
 import {
   applyCitation,
   applyOpenAIWeb,
@@ -52,6 +53,29 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 })
 export const builtins: Tool[] = [
+  {
+    name: 'orbis_voice_note',
+    description:
+      '发送一条可点击播放的真实语音条。text为1–2000字，使用人类配置的TTS和音色。成功返回message_id；不自动播放，不代表人类已听，不要重复发送。需人类开启允许AI发语音条。',
+    input_schema: schema({ text: { type: 'string', minLength: 1, maxLength: 2000 } }, ['text']),
+  },
+  {
+    name: 'start_voice_call',
+    description:
+      '向当前前台窗口发起来电邀请。reason为邀请原因，max_ring_seconds为5–60秒默认30。人类接听后才能开始语音，accepted代表同意，当前回复结束后才开始听说；拒绝/未接后15分钟内不重复呼叫。不会拨打手机号码或后台唤醒。',
+    input_schema: schema(
+      {
+        reason: { type: 'string', minLength: 1, maxLength: 2000 },
+        max_ring_seconds: { type: 'integer', minimum: 5, maximum: 60 },
+      },
+      ['reason']
+    ),
+  },
+  {
+    name: 'end_voice_call',
+    description: '结束当前轮次绑定的语音通话。call_id可省略；不能结束其他窗口或后来新拨的电话。',
+    input_schema: schema({ call_id: { type: 'string' }, reason: { type: 'string' } }),
+  },
   {
     name: 'orbis_help',
     description:
@@ -156,6 +180,9 @@ export const mcpAlias = (connection: string, name: string) => {
 export const enabledTools = (s: State, window = s.windows[0]?.id): Tool[] => [
   ...builtins.filter(
     (t) =>
+      (t.name !== 'orbis_voice_note' || s.settings.speech?.allowVoiceNotes === true) &&
+      (t.name !== 'start_voice_call' || s.settings.speech?.allowIncomingCalls === true) &&
+      (t.name !== 'end_voice_call' || !!boundCall(window)) &&
       (t.name !== 'orbis_sentinel' || s.settings.sentinelEnabled) &&
       (t.name !== 'orbis_conversation_settings' ||
         s.windows.find((w) => w.id === window)?.conversation?.allowAI === true)
@@ -218,7 +245,10 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
     hits = selection.filter((x) => x.kind !== 'pinned')
   w = {
     ...w,
-    messages: contextMessages(w.messages, settings.generation ?? defaultGeneration()).map((m) => ({
+    messages: contextMessages(
+      w.messages.filter((m) => !m.voiceCall && !(m.role === 'assistant' && m.voiceNote)),
+      settings.generation ?? defaultGeneration()
+    ).map((m) => ({
       ...m,
       text: displayText(s, w, m),
     })),

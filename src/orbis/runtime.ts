@@ -1,3 +1,5 @@
+import { executeVoice } from './voiceTools.js'
+import { boundCall } from './voiceHost.js'
 import {
   compact,
   retract,
@@ -27,7 +29,9 @@ async function execute(
   turn: string,
   name: string,
   args: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  toolCall: string,
+  bound?: string
 ): Promise<unknown> {
   if (signal.aborted) throw new DOMException('已停止', 'AbortError')
   const s = await readState()
@@ -38,6 +42,9 @@ async function execute(
       if (t) return callMcp(c, t.name, args, signal)
     }
     throw Error('MCP 工具不存在')
+  }
+  if (['orbis_voice_note', 'start_voice_call', 'end_voice_call'].includes(name)) {
+    return executeVoice(window, turn, toolCall, name, args, signal, bound)
   }
   return (
     await transact((s) => {
@@ -108,6 +115,7 @@ export async function generate(
   let streamedText = '',
     streamedReasoning = ''
   const turnId = uid()
+  const callBinding = boundCall(window)
   try {
     searchTools((await readState()).settings)
     release = await acquire(window)
@@ -221,7 +229,9 @@ export async function generate(
             turnId,
             call.name,
             JSON.parse(call.arguments || '{}'),
-            controller.signal
+            controller.signal,
+            call.id,
+            callBinding
           )
         } catch (e) {
           value = {

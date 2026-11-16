@@ -14,6 +14,8 @@ export type Message = {
   role: 'user' | 'assistant' | 'tool'
   text: string
   at: number
+  voiceNote?: boolean
+  voiceCall?: { id: string; status: string; reason: string }
   reasoning?: string
   calls?: Call[]
   callId?: string
@@ -142,6 +144,8 @@ export type State = {
     webSearch?: boolean
     speech?: import('./speech.js').SpeechSettings
     storageNoticeSeen?: boolean
+    composerExpanded?: boolean
+    incomingCallCooldownUntil?: number
   }
 }
 export const uid = () => crypto.randomUUID()

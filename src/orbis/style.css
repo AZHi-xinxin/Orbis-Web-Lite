@@ -1096,3 +1096,147 @@ h1 {
   .storage-reminder { align-items: flex-start; }
   .storage-table th, .storage-table td { padding: 8px; }
 }
+
+/* Compact Orbis composer: the input and send control survive collapsing. */
+.orbis .composer {
+  padding: 10px 12px;
+}
+.composer-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.composer-input-row textarea {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  min-height: 38px;
+  max-height: 130px;
+  padding: 9px 0;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+}
+.composer-input-row .expand-composer {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 38px;
+  padding: 0;
+  font-size: 24px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+}
+.composer-input-row .send {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--green);
+  color: white;
+}
+.orbis .composer-tools,
+.deepseek .composer-tools {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  padding: 5px 0 0;
+  margin: 0;
+  align-items: center;
+  overflow-x: auto;
+}
+.orbis .composer-tools button,
+.deepseek .composer-tools button {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 30px;
+  height: 30px;
+  padding: 4px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  gap: 3px;
+  margin: 0;
+  order: 0;
+}
+.orbis .composer-tools svg,
+.deepseek .composer-tools svg {
+  width: 13px;
+  height: 13px;
+}
+.orbis .composer-tools .attach-toggle {
+  width: 27px;
+  padding: 0;
+  font-size: 21px;
+}
+.orbis .human-thought-editor {
+  margin: 0 0 6px;
+}
+.orbis .human-thought-editor .thought-input {
+  min-height: 52px;
+}
+.recording-strip,
+.incoming-call {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 12px;
+  background: var(--panel);
+  margin: 6px 0;
+}
+.recording-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.incoming-call {
+  text-align: center;
+  box-shadow: 0 6px 25px #0001;
+}
+.incoming-call p {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.incoming-call small {
+  color: var(--muted);
+}
+.incoming-call button {
+  margin: 8px;
+  border-radius: 18px;
+  padding: 8px 22px;
+  background: var(--soft);
+}
+.call-history {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.call-history small {
+  display: block;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.voice-transcript {
+  max-width: 100%;
+  font-size: 13px;
+  color: var(--muted);
+}
+.orbis audio {
+  max-width: 100%;
+  width: 260px;
+}
+@media (max-width: 580px) {
+  .orbis .composer {
+    padding: 8px 10px;
+    border-radius: 23px;
+  }
+  .orbis .composer-tools .human-thought {
+    order: 0;
+    margin: 0;
+  }
+}

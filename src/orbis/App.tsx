@@ -1,3 +1,12 @@
+import {
+  registerVoiceHost,
+  incomingCall,
+  respondIncoming,
+  boundCall,
+  setActiveCall,
+  clearActiveCall,
+  type Invitation,
+} from './voiceHost.js'
 import { assetUrl } from './assets.js'
 import { manual } from './help.js'
 import { profileName } from './profile.js'
@@ -93,6 +102,15 @@ export function App() {
     [call, setCall] = useState(false),
     [voicePhase, setVoicePhase] = useState(''),
     [attachmentsOpen, setAttachmentsOpen] = useState(false)
+  const [invitation, setInvitation] = useState<Invitation | undefined>()
+  const acceptedCall = useRef<Invitation | undefined>(undefined)
+  const sendRef = useRef(send)
+  sendRef.current = send
+  const hangupRef = useRef(hangup)
+  hangupRef.current = hangup
+  const activeRef = useRef(active)
+  activeRef.current = active
+  const expanded = state.settings.composerExpanded !== false
   const voiceRequest = useRef<AbortController | null>(null),
     recordingPending = useRef(false),
     recordingGeneration = useRef(0),
@@ -223,6 +241,27 @@ export function App() {
     }
   }, [])
   useEffect(() => {
+    const update = () => setInvitation(incomingCall())
+    window.addEventListener('orbis-incoming-call', update)
+    const unregister = registerVoiceHost({
+      available: (id) =>
+        activeRef.current === id &&
+        !callRef.current &&
+        !recordingPending.current &&
+        !recordingRef.current &&
+        !voiceRequest.current,
+      accept: (invite) => {
+        prepareSpeech()
+        acceptedCall.current = invite
+      },
+      end: () => hangupRef.current(false),
+    })
+    return () => {
+      unregister()
+      window.removeEventListener('orbis-incoming-call', update)
+    }
+  }, [])
+  useEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)')
     const update = () => setSystemDark(media.matches)
     media.addEventListener('change', update)
@@ -289,7 +328,7 @@ export function App() {
         const claimed = await transact((s) => claimSentinels(s, Date.now()))
         for (const e of claimed.result) {
           try {
-            const done = await send(e.window, e.prompt, [], true)
+            const done = await sendRef.current(e.window, e.prompt, [], true)
             await transact((s) => {
               const rule = s.sentinels.find((r) => r.id === e.rule)
               if (rule)
@@ -323,8 +362,9 @@ export function App() {
     setBusy(true)
     pendingFocus.current = true
     setNotice('')
+    let completed = false
     try {
-      return await generate(
+      completed = await generate(
         windowId,
         text,
         attachments,
@@ -334,6 +374,7 @@ export function App() {
         humanThought,
         quoteId
       )
+      return completed
     } catch (e) {
       fail(e)
       return false
@@ -342,6 +383,55 @@ export function App() {
       setBusy(false)
       busyRef.current = false
       await refresh()
+      const accepted = acceptedCall.current
+      acceptedCall.current = undefined
+      if (accepted && boundCall(accepted.window) === accepted.id) {
+        if (completed && activeRef.current === accepted.window) {
+          void openAcceptedCall(accepted)
+        } else {
+          hangup(false)
+        }
+      }
+    }
+  }
+  async function openAcceptedCall(invite: Invitation) {
+    callRef.current = true
+    setCall(true)
+    recordingWindow.current = invite.window
+    const controller = new AbortController()
+    voiceRequest.current = controller
+    try {
+      const latest = await readState()
+      if (!speechSettings(latest.settings).allowIncomingCalls) {
+        throw Error('AI 来电权限已关闭')
+      }
+      const reply = windowOf(latest, invite.window)
+        .messages.filter(
+          (m) =>
+            m.role === 'assistant' &&
+            !m.calls?.length &&
+            !m.voiceCall &&
+            !m.voiceNote &&
+            m.status === 'done' &&
+            m.turn === invite.turn
+        )
+        .at(-1)
+      if (reply?.text) {
+        setVoicePhase('准备朗读')
+        await speakText(reply.text, latest.settings, controller.signal, () =>
+          setVoicePhase('正在说')
+        )
+      }
+      if (!controller.signal.aborted && callRef.current) await beginRecord()
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        hangup()
+        fail(e)
+      }
+    } finally {
+      if (voiceRequest.current === controller) {
+        voiceRequest.current = null
+      }
     }
   }
   async function submit() {
@@ -411,7 +501,9 @@ export function App() {
     if (autoEndTimer.current) clearInterval(autoEndTimer.current)
     autoEndTimer.current = null
   }
-  function hangup() {
+  function hangup(stopModel = true) {
+    clearActiveCall()
+    acceptedCall.current = undefined
     callRef.current = false
     setCall(false)
     recordingGeneration.current++
@@ -425,7 +517,9 @@ export function App() {
     setVoiceBusy(false)
     setVoicePhase('')
     stopSpeech()
-    stopGeneration()
+    if (stopModel) {
+      stopGeneration()
+    }
   }
   useEffect(() => {
     if (
@@ -511,7 +605,7 @@ export function App() {
       }
       if (controller.signal.aborted || generation !== recordingGeneration.current) return
       setVoicePhase('正在回复')
-      const ok = await send(windowId, text, [file])
+      const ok = await sendRef.current(windowId, text, [file])
       if (
         ok &&
         callRef.current &&
@@ -538,8 +632,9 @@ export function App() {
           callRef.current &&
           !controller.signal.aborted &&
           generation === recordingGeneration.current
-        )
+        ) {
           await beginRecord()
+        }
       } else if (callRef.current && !ok) hangup()
     } catch (e) {
       if (!controller.signal.aborted) {
@@ -582,6 +677,7 @@ export function App() {
       fail(e)
       return
     }
+    setActiveCall(active, uid())
     callRef.current = true
     setCall(true)
     await beginRecord()
@@ -804,7 +900,7 @@ export function App() {
               onClick={() => void toggleCall()}
               aria-label={call ? '挂断语音' : '开始语音通话'}
             >
-              {call ? '挂断' : '☎'}
+              {call ? '挂断' : '电话'}
             </button>
             <button onClick={() => setPanel('settings')} aria-label="设置">
               ···
@@ -916,7 +1012,10 @@ export function App() {
                           <p>{m.reasoning}</p>
                         </details>
                       )}
-                      {bubbles(m.text, state.settings.split && m.role === 'assistant')
+                      {bubbles(
+                        m.voiceNote || m.voiceCall ? '' : m.text,
+                        state.settings.split && m.role === 'assistant'
+                      )
                         .filter(
                           (part) => part.trim() || (m.status === 'working' && !m.calls?.length)
                         )
@@ -940,6 +1039,30 @@ export function App() {
                         ) : f.mime.startsWith('audio/') ? (
                           <audio key={f.id} controls src={f.data} />
                         ) : null
+                      )}
+                      {m.voiceNote && (
+                        <details className="voice-transcript">
+                          <summary>语音文字</summary>
+                          <p>{m.text}</p>
+                        </details>
+                      )}
+                      {m.voiceCall && (
+                        <div className="call-history">
+                          电话邀请 · {m.voiceCall.reason}
+                          <small>
+                            {(
+                              {
+                                waiting: '等待接听（页面重开后不重拨）',
+                                accepted: '已接听',
+                                rejected: '已拒绝',
+                                no_response: '未接听',
+                                unavailable: '页面当前无法接听',
+                                cancelled: '已取消',
+                                failed: '未能接通',
+                              } as Record<string, string>
+                            )[m.voiceCall.status] ?? '已结束'}
+                          </small>
+                        </div>
                       )}
                       <SearchResults message={m} />
                       {m.calls?.length ? (
@@ -1002,7 +1125,7 @@ export function App() {
               <button onClick={() => void toggleCall()}>挂断</button>
             </div>
           )}
-          {!state.settings.storageNoticeSeen && (
+          {expanded && !state.settings.storageNoticeSeen && (
             <div className="storage-reminder">
               <span>聊天与配置只存在此打开方式。清除“网站数据”会删除资料。</span>
               <button onClick={() => setPanel('backup')}>清理前看这里</button>
@@ -1018,7 +1141,27 @@ export function App() {
               </button>
             </div>
           )}
-          <div className="composer">
+          {invitation && (
+            <div className="incoming-call" role="dialog" aria-label="AI 来电">
+              <strong>{state.settings.name} 来电</strong>
+              <p>{invitation.reason}</p>
+              <small>
+                接听后才开始语音 · 最多等待{' '}
+                {Math.max(1, Math.ceil((invitation.deadline - Date.now()) / 1000))} 秒
+              </small>
+              <div>
+                <button onClick={() => respondIncoming(false)}>拒绝</button>
+                <button onClick={() => respondIncoming(true)}>接听</button>
+              </div>
+            </div>
+          )}
+          {recording && !call && (
+            <div className="recording-strip">
+              正在录音 <button onClick={() => void finishRecord()}>发送语音</button>
+              <button onClick={() => hangup()}>取消录音</button>
+            </div>
+          )}
+          <div className={'composer ' + (expanded ? 'expanded' : 'minimized')}>
             {quote && (
               <div className="quote">
                 引用：{w.messages.find((m) => m.id === quote)?.text.slice(0, 90)}
@@ -1054,107 +1197,39 @@ export function App() {
                 ))}
               </div>
             )}
-            <textarea
-              disabled={switching}
-              aria-label="输入消息"
-              placeholder={deepseek ? '发消息，或点击语音说话' : '想说的话，慢慢说…'}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (
-                  e.key === 'Enter' &&
-                  !e.shiftKey &&
-                  !e.nativeEvent.isComposing &&
-                  window.innerWidth > 700
-                ) {
-                  e.preventDefault()
-                  void submit()
-                }
-              }}
-            />
-            <div className="composer-tools">
-              {deepseek && (
-                <button
-                  className={'reasoning-toggle ' + (options.reasoning !== 'off' ? 'enabled' : '')}
-                  aria-label="深度思考"
-                  aria-pressed={options.reasoning !== 'off'}
-                  onClick={() =>
-                    setOption('reasoning', options.reasoning === 'off' ? 'high' : 'off')
-                  }
-                  title="切换 AI 深度思考；具体能力取决于所选模型"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    aria-hidden="true"
-                  >
-                    <ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(45 12 12)" />
-                    <ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(-45 12 12)" />
-                    <circle cx="12" cy="12" r="1" />
-                  </svg>
-                  深度思考
-                </button>
-              )}
+            <div className="composer-input-row">
               <button
-                className={'search-toggle ' + (state.settings.webSearch ? 'enabled' : '')}
-                aria-label="智能搜索"
-                aria-pressed={!!state.settings.webSearch}
-                disabled={busy || call}
+                className="expand-composer"
+                aria-label={expanded ? '收起输入工具' : '展开输入工具'}
+                aria-expanded={expanded}
                 onClick={() => {
-                  if (!state.settings.webSearch && !supportsWeb(state.settings)) {
-                    setNotice('智能搜索使用 DeepSeek 官方 deepseek-flash，请在连接设置选择')
-                    setPanel('settings')
-                    return
-                  }
+                  setAttachmentsOpen(false)
                   void change((s) => {
-                    s.settings.webSearch = !s.settings.webSearch
+                    s.settings.composerExpanded = !expanded
                   })
                 }}
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="18"
-                  height="18"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  aria-hidden="true"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <ellipse cx="12" cy="12" rx="4" ry="9" />
-                  <path d="M3 12h18" />
-                </svg>
-                智能搜索
+                {expanded ? '×' : '＋'}
               </button>
-              <button
-                className="attach-toggle"
-                aria-label="添加附件"
-                aria-expanded={attachmentsOpen}
-                onClick={() => setAttachmentsOpen((x) => !x)}
-              >
-                {attachmentsOpen ? '×' : '＋'}
-              </button>
-              <button
-                className={'human-thought ' + (thoughtOn ? 'enabled' : '')}
-                onClick={() => setThoughtOn((x) => !x)}
-                aria-pressed={thoughtOn}
-                aria-label="人类思考链"
-                title={thoughtOn ? '点击关闭人类思考链' : '点击开启人类思考链'}
-              >
-                人类思考 · {thoughtOn ? '开' : '关'}
-              </button>
-              <button
-                className="voice-button"
-                disabled={voiceBusy || (busy && !recording)}
-                onClick={() => void (recording ? finishRecord() : beginRecord())}
-              >
-                {recording ? '结束本句' : voiceBusy ? '转写中…' : '♩ 语音'}
-              </button>
-              <span />
+              <textarea
+                rows={1}
+                disabled={switching}
+                aria-label="输入消息"
+                placeholder={deepseek ? '发消息，或点击语音说话' : '想说的话，慢慢说…'}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing &&
+                    window.innerWidth > 700
+                  ) {
+                    e.preventDefault()
+                    void submit()
+                  }
+                }}
+              />
               {busy ? (
                 <button
                   className="send"
@@ -1176,6 +1251,99 @@ export function App() {
                 </button>
               )}
             </div>
+            {expanded && (
+              <div className="composer-tools">
+                {deepseek && (
+                  <button
+                    className={'reasoning-toggle ' + (options.reasoning !== 'off' ? 'enabled' : '')}
+                    aria-label="深度思考"
+                    aria-pressed={options.reasoning !== 'off'}
+                    onClick={() =>
+                      setOption('reasoning', options.reasoning === 'off' ? 'high' : 'off')
+                    }
+                    title="切换 AI 深度思考；具体能力取决于所选模型"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="18"
+                      height="18"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      aria-hidden="true"
+                    >
+                      <ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(45 12 12)" />
+                      <ellipse cx="12" cy="12" rx="4" ry="10" transform="rotate(-45 12 12)" />
+                      <circle cx="12" cy="12" r="1" />
+                    </svg>
+                    深思
+                  </button>
+                )}
+                <button
+                  className={'search-toggle ' + (state.settings.webSearch ? 'enabled' : '')}
+                  aria-label="智能搜索"
+                  aria-pressed={!!state.settings.webSearch}
+                  disabled={busy || call}
+                  onClick={() => {
+                    if (!state.settings.webSearch && !supportsWeb(state.settings)) {
+                      setNotice('智能搜索使用 DeepSeek 官方 deepseek-flash，请在连接设置选择')
+                      setPanel('settings')
+                      return
+                    }
+                    void change((s) => {
+                      s.settings.webSearch = !s.settings.webSearch
+                    })
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <ellipse cx="12" cy="12" rx="4" ry="9" />
+                    <path d="M3 12h18" />
+                  </svg>
+                  搜索
+                </button>
+                <button
+                  className="attach-toggle"
+                  aria-label="添加附件"
+                  aria-expanded={attachmentsOpen}
+                  onClick={() => setAttachmentsOpen((x) => !x)}
+                >
+                  {attachmentsOpen ? '×' : '＋'}
+                </button>
+                <button
+                  className={'human-thought ' + (thoughtOn ? 'enabled' : '')}
+                  onClick={() => setThoughtOn((x) => !x)}
+                  aria-pressed={thoughtOn}
+                  aria-label="人类思考链"
+                  title={thoughtOn ? '点击关闭人类思考链' : '点击开启人类思考链'}
+                >
+                  思考链 · {thoughtOn ? '开' : '关'}
+                </button>
+                <button
+                  className="voice-button"
+                  aria-label={recording ? '结束录音' : '录制语音条'}
+                  disabled={voiceBusy || (busy && !recording)}
+                  onClick={() => void (recording ? finishRecord() : beginRecord())}
+                >
+                  {recording ? '发送' : voiceBusy ? '转写' : '语音'}
+                </button>
+                <button
+                  className="toolbar-call"
+                  aria-label="拨打电话"
+                  onClick={() => void toggleCall()}
+                >
+                  {call ? '挂断' : '电话'}
+                </button>
+              </div>
+            )}
           </div>
           {attachmentsOpen && (
             <div className="attachment-drawer" aria-label="选择附件类型">
@@ -1229,13 +1397,16 @@ export function App() {
               </label>
             </div>
           )}
-          <div className="composer-foot">
-            Orbis Web Lite · <button onClick={() => setPanel('backup')}>本地存储与清理提醒</button>{' '}
-            · <button onClick={() => setPanel('backup')}>导出留存</button> ·{' '}
-            <a href={assetUrl('source.tar.gz')} download>
-              源码
-            </a>
-          </div>
+          {expanded && (
+            <div className="composer-foot">
+              Orbis Web Lite ·{' '}
+              <button onClick={() => setPanel('backup')}>本地存储与清理提醒</button> ·{' '}
+              <button onClick={() => setPanel('backup')}>导出留存</button> ·{' '}
+              <a href={assetUrl('source.tar.gz')} download>
+                源码
+              </a>
+            </div>
+          )}
         </div>
       </main>
       {panel !== 'none' && (

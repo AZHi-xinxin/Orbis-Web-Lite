@@ -120,6 +120,27 @@ export function SpeechPanel({
       <label className="toggle">
         <input
           type="checkbox"
+          checked={!!cfg.allowVoiceNotes}
+          onChange={(e) => set('allowVoiceNotes', e.target.checked)}
+        />
+        允许 AI 发语音条
+      </label>
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={!!cfg.allowIncomingCalls}
+          onChange={(e) => set('allowIncomingCalls', e.target.checked)}
+        />
+        允许 AI 来电
+      </label>
+      <p className="subtle">
+        语音条需选择 DeepSeek
+        TTS，收到后点播放。来电只在此页面前台出现，接听后才使用麦克风；拒绝或未接后 15
+        分钟内不会再邀请。配置服务不会自动把所有文字变成语音。
+      </p>
+      <label className="toggle">
+        <input
+          type="checkbox"
           checked={cfg.autoSend}
           onChange={(e) => set('autoSend', e.target.checked)}
         />

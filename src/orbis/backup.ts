@@ -175,7 +175,14 @@ export function restoreBackup(
       Object.entries(s.settings ?? {}).filter(
         ([key]) =>
           key in defaults ||
-          ['generation', 'speech', 'webSearch', 'storageNoticeSeen', 'tutorialSeen'].includes(key)
+          [
+            'generation',
+            'speech',
+            'webSearch',
+            'storageNoticeSeen',
+            'tutorialSeen',
+            'composerExpanded',
+          ].includes(key)
       )
     )
     current.settings = { ...defaults, ...accepted, sentinelEnabled: false }
@@ -244,6 +251,9 @@ function validateState(s: State) {
         typeof c.ttsEndpoint !== 'string' ||
         !['browser', 'deepseek'].includes(c.ttsProvider) ||
         !['stella', 'tide'].includes(c.voice) ||
+        ['allowVoiceNotes', 'allowIncomingCalls'].some(
+          (k) => c[k as keyof typeof c] !== undefined && typeof c[k as keyof typeof c] !== 'boolean'
+        ) ||
         ['asrReuseModelKey', 'ttsReuseModelKey', 'autoSend'].some(
           (k) => typeof c[k as keyof typeof c] !== 'boolean'
         )
@@ -335,6 +345,17 @@ function validateMessage(m: Message) {
     !Number.isFinite(m.at)
   )
     throw Error('消息格式错误')
+  if (m.voiceNote !== undefined && typeof m.voiceNote !== 'boolean') {
+    throw Error('语音条格式错误')
+  }
+  if (
+    m.voiceCall &&
+    (typeof m.voiceCall.id !== 'string' ||
+      typeof m.voiceCall.reason !== 'string' ||
+      typeof m.voiceCall.status !== 'string')
+  ) {
+    throw Error('来电记录格式错误')
+  }
   if (m.providerContent !== undefined && !Array.isArray(m.providerContent))
     throw Error('搜索历史格式错误')
   if (

@@ -8,6 +8,8 @@ export type SpeechSettings = {
   ttsProvider: 'browser' | 'deepseek'
   voice: 'stella' | 'tide'
   autoSend: boolean
+  allowVoiceNotes?: boolean
+  allowIncomingCalls?: boolean
 }
 export const speechSettings = (s: State['settings']): SpeechSettings => ({
   asrEndpoint: 'https://api.deepseek.com',
@@ -17,6 +19,8 @@ export const speechSettings = (s: State['settings']): SpeechSettings => ({
   ttsProvider: 'browser',
   voice: 'stella',
   autoSend: true,
+  allowVoiceNotes: false,
+  allowIncomingCalls: false,
   ...s.speech,
 })
 export function speechURL(endpoint: string, kind: 'asr' | 'tts'): string {
@@ -50,6 +54,41 @@ export function speechCredential(
 async function checked(response: Response) {
   if (!response.ok) throw Error(`语音接口返回 ${response.status}，请检查密钥、余额与接口地址`)
   return response
+}
+/** Create a saved voice message; synthesis is separate from playback and never auto-retried. */
+export async function synthesizeSpeech(
+  text: string,
+  settings: State['settings'],
+  signal: AbortSignal
+): Promise<Blob> {
+  const cfg = speechSettings(settings)
+  if (cfg.ttsProvider !== 'deepseek') {
+    throw Error('语音条需要 DeepSeek TTS；系统朗读不能生成可保存的音频')
+  }
+  if (!text.trim() || Array.from(text).length > 2000) {
+    throw Error('每条语音正文需为 1–2000 字')
+  }
+  const { url, key } = speechCredential(settings, 'tts')
+  const response = await checked(
+    await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice_id: cfg.voice, format: 'wav', filter_markdown: true }),
+      signal,
+    })
+  )
+  const data = await response.arrayBuffer()
+  const bytes = new Uint8Array(data)
+  if (
+    bytes.length < 44 ||
+    bytes.length > 20 * 1024 * 1024 ||
+    String.fromCharCode(...bytes.slice(0, 4)) !== 'RIFF' ||
+    String.fromCharCode(...bytes.slice(8, 12)) !== 'WAVE'
+  ) {
+    throw Error('TTS 没有返回有效的 WAV 音频，未生成语音条')
+  }
+  if (signal.aborted) throw new DOMException('已停止', 'AbortError')
+  return new Blob([data], { type: 'audio/wav' })
 }
 export async function transcribeSpeech(
   s: State['settings'],
@@ -179,7 +218,9 @@ export async function speakText(
         })
       }
     }
-    if (signal.aborted) throw new DOMException('已停止', 'AbortError')
+    if (signal.aborted) {
+      throw new DOMException('已停止', 'AbortError')
+    }
   } finally {
     outer?.removeEventListener('abort', abort)
     if (current?.controller === controller) current = undefined
