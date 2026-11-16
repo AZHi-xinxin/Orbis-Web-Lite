@@ -358,6 +358,7 @@ function validateMessage(m: Message) {
     !Number.isFinite(m.at)
   )
     throw Error('消息格式错误')
+  if (m.timeZone !== undefined && typeof m.timeZone !== 'string') throw Error('消息时区格式错误')
   if (m.voiceNote !== undefined && typeof m.voiceNote !== 'boolean') {
     throw Error('语音条格式错误')
   }

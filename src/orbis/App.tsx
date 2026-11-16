@@ -1,3 +1,4 @@
+import { localTimestamp } from './clock.js'
 import {
   registerVoiceHost,
   incomingCall,
@@ -42,7 +43,6 @@ import {
   readNotes,
   retract,
   rollback,
-  sentinelAction,
   textOf,
   tokens,
   uid,
@@ -140,10 +140,6 @@ export function App() {
     [mcpName, setMcpName] = useState(''),
     [mcpUrl, setMcpUrl] = useState(''),
     [mcpKey, setMcpKey] = useState('')
-  const [rulePrompt, setRulePrompt] = useState(''),
-    [ruleAt, setRuleAt] = useState(''),
-    [ruleKind, setRuleKind] = useState<'once' | 'interval' | 'daily'>('once'),
-    [ruleInterval, setRuleInterval] = useState('60')
   const [windowQuery, setWindowQuery] = useState('')
   const [profileDraft, setProfileDraft] = useState(''),
     [profileVisible, setProfileVisible] = useState(false),
@@ -773,26 +769,6 @@ export function App() {
       fail(e)
     }
   }
-  async function addRule() {
-    if (!w) return
-    try {
-      const r = await transact((s) =>
-        sentinelAction(s, w.id, {
-          action: 'create',
-          type: ruleKind,
-          prompt: rulePrompt,
-          due_at_ms: new Date(ruleAt).getTime(),
-          interval_seconds: Number(ruleInterval) * 60,
-          daily_at: ruleAt,
-        })
-      )
-      setState(r.state)
-      setRulePrompt('')
-      setNotice('规则已保存；当前实验版仅网页打开时执行')
-    } catch (e) {
-      fail(e)
-    }
-  }
   async function revoke(m: Message) {
     if (!w || busy) return
     try {
@@ -1194,6 +1170,7 @@ export function App() {
               startedAt={w.voiceSessions?.find((c) => c.id === activeSession.current?.id)?.startedAt ?? Date.now()}
               phase={voicePhase || (recording ? '正在听' : '准备下一句')} recording={recording}
               caption={partial?.text || w.messages.filter((m) => m.voiceSessionId === activeSession.current?.id && m.role !== 'tool' && !m.voiceCall && !m.calls?.length).at(-1)?.text || '接通了，随时开口。'}
+              captionKey={partial?.id || w.messages.filter((m) => m.voiceSessionId === activeSession.current?.id && m.role !== 'tool' && !m.voiceCall && !m.calls?.length).at(-1)?.id || ''}
               micMuted={callMicMuted} speakerMuted={callSpeakerMuted} onResumeAudio={resumeAudio}
               onMinimize={() => setCallMinimized(true)} onExpand={() => setCallMinimized(false)}
               onMic={toggleCallMic} onSpeaker={toggleCallSpeaker} onHangup={() => hangup()}
@@ -2173,83 +2150,20 @@ export function App() {
                   />
                   允许基础哨兵与 AI 主动消息
                 </label>
-                <label>
-                  触发方式
-                  <select
-                    value={ruleKind}
-                    onChange={(e) => {
-                      setRuleKind(e.target.value as typeof ruleKind)
-                      setRuleAt('')
-                    }}
-                  >
-                    <option value="once">未来某个时间</option>
-                    <option value="interval">每隔一段时间</option>
-                    <option value="daily">每天固定时间</option>
-                  </select>
-                </label>
-                {ruleKind === 'interval' ? (
-                  <label>
-                    间隔分钟
-                    <input
-                      type="number"
-                      min="1"
-                      value={ruleInterval}
-                      onChange={(e) => setRuleInterval(e.target.value)}
-                    />
-                  </label>
-                ) : (
-                  <label>
-                    {ruleKind === 'daily' ? '每日时间' : '开始时间'}
-                    <input
-                      type={ruleKind === 'daily' ? 'time' : 'datetime-local'}
-                      value={ruleAt}
-                      onChange={(e) => setRuleAt(e.target.value)}
-                    />
-                  </label>
-                )}
-                <label>
-                  交给 AI 的唤醒内容
-                  <textarea
-                    value={rulePrompt}
-                    onChange={(e) => setRulePrompt(e.target.value)}
-                    placeholder="例如：到了约定的时间，问问我今天过得怎么样"
-                  />
-                </label>
-                <button className="primary" disabled={!rulePrompt} onClick={() => void addRule()}>
-                  为当前窗口添加
-                </button>
+                <p>你只需决定是否授权。开启后，AI 可在对话中自主设定唤醒时间、内容，并管理自己的规则。</p>
+                <p className="info">{state.settings.sentinelEnabled ? '已授权。开启不等于已设定规则；AI 从下一条消息起可使用哨兵工具。' : '尚未授权。已有规则保留，但不会触发；AI 无法自行打开总开关。'}</p>
+                {!state.sentinels.length && <p>暂时没有规则。无需在这里填写内容，AI 会根据对话自行安排。</p>}
                 {state.sentinels.map((r) => (
                   <div className="note" key={r.id}>
                     <strong>
-                      {r.name} · {r.enabled ? '已启用' : '已暂停'}
+                      {r.name} · {r.enabled ? (state.settings.sentinelEnabled ? '已启用' : '授权关闭，暂不触发') : '已暂停'}
                     </strong>
                     <p>{r.prompt}</p>
                     <small>
                       {state.windows.find((w) => w.id === r.window)?.title} ·{' '}
-                      {new Date(r.due).toLocaleString()}
+                      {localTimestamp(r.due, r.timezone)} · {r.timezone}
                     </small>
                     <small>{r.receipt}</small>
-                    <button
-                      onClick={() =>
-                        void change((s) => {
-                          sentinelAction(s, r.window, {
-                            action: r.enabled ? 'pause' : 'resume',
-                            id: r.id,
-                          })
-                        })
-                      }
-                    >
-                      {r.enabled ? '暂停' : '恢复'}
-                    </button>
-                    <button
-                      onClick={() =>
-                        void change((s) => {
-                          sentinelAction(s, r.window, { action: 'delete', id: r.id })
-                        })
-                      }
-                    >
-                      删除
-                    </button>
                   </div>
                 ))}
               </>

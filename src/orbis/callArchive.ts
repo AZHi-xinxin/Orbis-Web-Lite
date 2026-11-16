@@ -1,3 +1,4 @@
+import { localTimestamp } from './clock.js'
 import { type Message, type State, type VoiceSession, type Window, windowOf } from './core.js'
 
 export function beginVoiceSession(s: State, window: string, id: string, at = Date.now()) {
@@ -23,7 +24,7 @@ export function finishVoiceSession(s: State, window: string, id: string, endedAt
 
 export function callTranscript(call: VoiceSession): string {
   return (call.raw ?? []).filter((m) => !m.retracted && !m.voiceCall && m.role !== 'tool' && m.text.trim())
-    .map((m) => `${m.role === 'user' ? '人类' : 'AI'}：${m.text}`).join('\n\n')
+    .map((m) => `[${localTimestamp(m.at, 'UTC')}] ${m.role === 'user' ? '人类' : 'AI'}：${m.text}`).join('\n\n')
 }
 
 /** UI projection only. The durable messages remain untouched, including signed tool history. */

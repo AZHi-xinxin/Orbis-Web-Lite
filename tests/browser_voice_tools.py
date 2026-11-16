@@ -5,6 +5,7 @@ from playwright.sync_api import sync_playwright,expect
 OUT=Path(os.environ.get('ORBIS_TEST_OUTPUT','/tmp/orbis-alpha6-browser'));OUT.mkdir(parents=True,exist_ok=True)
 URL=os.environ.get('ORBIS_TEST_URL','http://127.0.0.1:18791/orbis-web/')
 requests=[];speech=[];summaries=[]
+LONG_CAPTION='字幕开头。\n\n'+('这是完整的通话字幕，长段落应该能上下滚动阅读。\n\n'*12)+'https://example.test/'+('longword'*35)+'\n字幕结尾。'
 def model(route):
  body=route.request.post_data_json;requests.append(body)
  last=body['messages'][-1]['content']
@@ -12,7 +13,7 @@ def model(route):
   assert not body.get('tools');summaries.append(body)
   route.fulfill(status=200,content_type='text/event-stream',body='data: '+json.dumps({'type':'content_block_start','index':0,'content_block':{'type':'text','text':'本次聊了合成通话，已确认结束；没有新增待办。'}},ensure_ascii=False)+'\n\ndata: {"type":"message_stop"}\n\n');return
  if last and last[-1].get('type')=='tool_result':
-  blocks=[{'type':'text','text':'合成开场白。'}]
+  blocks=[{'type':'text','text':LONG_CAPTION}]
  else:
   text=''.join(x.get('text','') for x in last)
   tool='orbis_voice_note' if '请发语音条' in text else 'start_voice_call' if '请来电' in text else 'end_voice_call' if '合成挂断' in text else None
@@ -81,6 +82,24 @@ with sync_playwright() as p:
  expect(page.locator('.voice-call-screen')).to_contain_text('正在听',timeout=15000)
  assert len(speech)==synthesized
  assert page.evaluate('playElements.length===2 && playElements[0]===playElements[1]')
+ # Long subtitles keep their entire text, first/last lines and an explicit full view.
+ for width,height in [(320,568),(390,700),(390,844),(768,844)]:
+  page.set_viewport_size({'width':width,'height':height})
+  caption=page.get_by_label('当前通话字幕',exact=True)
+  assert caption.locator('p').inner_text()==LONG_CAPTION
+  assert caption.evaluate('(e)=>e.scrollHeight>e.clientHeight && e.scrollWidth<=e.clientWidth')
+  caption.evaluate('(e)=>e.scrollTop=0')
+  assert caption.evaluate('(e)=>e.firstElementChild.getBoundingClientRect().top>=e.getBoundingClientRect().top')
+  caption.evaluate('(e)=>e.scrollTop=e.scrollHeight')
+  assert caption.evaluate("""e=>{const t=e.firstElementChild.firstChild,r=document.createRange();r.setStart(t,t.length-5);r.setEnd(t,t.length);const last=[...r.getClientRects()].at(-1),box=e.getBoundingClientRect();return last.top>=box.top && last.bottom<=box.bottom}""")
+  page.get_by_role('button',name='查看完整字幕',exact=False).click()
+  full=page.get_by_role('dialog',name='完整通话字幕',exact=True)
+  assert full.locator('.call-caption-full').inner_text()==LONG_CAPTION
+  assert full.evaluate('(e)=>e.scrollWidth<=innerWidth')
+  full.get_by_role('button',name='关闭完整字幕',exact=True).click()
+ page.set_viewport_size({'width':390,'height':844});page.locator('.voice-call-screen').evaluate('(e)=>e.scrollTop=0')
+ page.get_by_label('当前通话字幕',exact=True).evaluate('(e)=>e.scrollTop=0')
+ page.screenshot(path=str(OUT/'long-caption.png'))
  assert page.evaluate('micRequests')==1;page.wait_for_timeout(500);page.locator('.voice-call-screen').get_by_role('button',name='说完了，发送本句').click()
  expect(page.locator('.voice-call-screen')).to_have_count(0,timeout=15000);done();assert page.evaluate('micStreams.every(s=>s.getTracks().every(t=>t.readyState==="ended"))')
  expect(page.locator('.voice-call-card')).to_have_count(1)
@@ -124,5 +143,5 @@ with sync_playwright() as p:
  # Human voice entry produces saved local audio; default model response remains text.
  page.get_by_role('button',name='录制语音条',exact=True).click();expect(page.locator('.recording-strip')).to_be_visible();page.wait_for_timeout(500);page.get_by_role('button',name='取消录音',exact=True).click();expect(page.locator('.recording-strip')).to_have_count(0)
  page.screenshot(path=str(OUT/'voice-history.png'));assert not errors,errors
- result={'passed':True,'requests':len(requests),'speech':speech,'page_errors':errors,'checks':['one-row 320/390/768/1280','collapse persisted','thought disabled hidden and unsent draft retained','AI voice generated saved playable after reload','reject no microphone','cooldown','accept opening then microphone','blocked playback resumes the same element with no extra TTS','AI bound hangup','one isolated summary','raw audio retained','manual call','minimize restores','mic and speaker controls','empty call no model request','4 viewport call controls','refresh no summary replay','stop ringing','timeout','reload no redial','human recording entry and cancel']}
+ result={'passed':True,'requests':len(requests),'speech':speech,'page_errors':errors,'checks':['one-row 320/390/768/1280','collapse persisted','thought disabled hidden and unsent draft retained','AI voice generated saved playable after reload','reject no microphone','cooldown','accept opening then microphone','blocked playback resumes the same element with no extra TTS','AI bound hangup','one isolated summary','raw audio retained','manual call','minimize restores','mic and speaker controls','empty call no model request','4 viewport call controls','long caption all text, first/last lines, unbroken URL and full reader at 320/390/768 widths','refresh no summary replay','stop ringing','timeout','reload no redial','human recording entry and cancel']}
  (OUT/'result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2));print(json.dumps(result,ensure_ascii=False));b.close()

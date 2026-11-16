@@ -1253,7 +1253,15 @@ h1 {
 .call-person time { font-variant-numeric:tabular-nums; font-size:18px; color:var(--muted); }
 .call-phase { display:flex; align-items:center; justify-content:center; gap:8px; margin:20px 0 6px; font-size:15px; }
 .call-live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); }
-.call-caption { width:min(100%,560px); min-height:100px; max-height:25vh; overflow:auto; white-space:pre-wrap; background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:22px; font-size:17px; line-height:1.8; flex:1 1 auto; }
+.call-caption { width:min(100%,560px); height:clamp(160px,28dvh,320px); min-height:160px; background:var(--panel); border:1px solid var(--line); border-radius:22px; overflow:hidden; display:flex; flex-direction:column; flex:0 0 auto; }
+.call-caption-scroll { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding:18px 20px; }
+.call-caption-scroll p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:17px; line-height:1.8; }
+.call-caption-expand { flex:none; width:100%; border-top:1px solid var(--line); padding:9px 14px; text-align:right; font-size:12px; color:var(--green); background:var(--panel); }
+.call-caption-overlay { position:fixed; inset:0; z-index:181; display:grid; place-items:center; padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)); background:#0005; }
+.call-caption-overlay > section { width:min(100%,720px); max-height:88dvh; min-height:0; display:flex; flex-direction:column; border-radius:22px; overflow:hidden; color:var(--ink); background:var(--page); }
+.call-caption-overlay header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 20px; flex:none; border-bottom:1px solid var(--line); }
+.call-caption-full { padding:20px; min-height:0; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:17px; line-height:1.8; }
+
 .call-turn-action { min-height:66px; flex:none; display:grid; place-items:center; color:var(--muted); text-align:center; font-size:12px; }
 .call-turn-action button { border:1px solid var(--line); border-radius:24px; padding:10px 24px; color:var(--ink); }
 .call-controls { display:flex; width:min(100%,380px); align-items:center; justify-content:space-around; gap:16px; flex:none; margin:12px 0 24px; }
@@ -1285,4 +1293,4 @@ h1 {
 .call-original small { color:var(--muted); font-size:11px; }
 .call-original audio { width:100%; max-width:380px; margin-top:10px; }
 .call-original pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
-@media(max-height:650px) { .voice-call-screen { padding-top:8px; } .call-person { margin:8px 0; } .call-avatar { width:64px; height:64px; margin-bottom:5px; } .call-avatar img { width:48px; height:48px; } .call-person h1 { font-size:20px; margin:4px 0; } .call-phase { margin:8px 0; } .call-caption { padding:12px; min-height:70px; } .call-turn-action { min-height:44px; } .call-controls { margin:8px 0; } .call-controls button { width:50px;height:50px; } .call-controls button.hangup { width:58px;height:58px; } }
+@media(max-height:650px) { .voice-call-screen { padding-top:8px; } .call-person { margin:8px 0; } .call-avatar { width:64px; height:64px; margin-bottom:5px; } .call-avatar img { width:48px; height:48px; } .call-person h1 { font-size:20px; margin:4px 0; } .call-phase { margin:8px 0; } .call-caption { min-height:140px; height:140px; } .call-caption-scroll { padding:12px 16px; } .call-turn-action { min-height:44px; } .call-controls { margin:8px 0; } .call-controls button { width:50px;height:50px; } .call-controls button.hangup { width:58px;height:58px; } }

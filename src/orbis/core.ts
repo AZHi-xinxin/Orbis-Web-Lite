@@ -3,6 +3,7 @@ import {
   type ConversationSettings,
   type GenerationOptions,
 } from './configuration.js'
+import { captureClock } from './clock.js'
 /** Orbis behavioral port. Local history is data; never an instruction or an executable replay. */
 export type Mode = 'light' | 'standard' | 'independent'
 export type NoteState = 'static' | 'conditional' | 'pinned' | 'paused'
@@ -14,6 +15,7 @@ export type Message = {
   role: 'user' | 'assistant' | 'tool'
   text: string
   at: number
+  timeZone?: string
   voiceNote?: boolean
   voiceSessionId?: string
   voiceSessionEnd?: string
@@ -505,6 +507,7 @@ export function compact(
       role: 'assistant',
       text: '[之前对话的压缩摘要，不是逐字原文]\n' + summary,
       at: event.at,
+      timeZone: captureClock(event.at).timeZone,
       status: 'done',
     },
     ...originals.slice(cut),
@@ -596,6 +599,7 @@ export function sentinelAction(s: State, window: string, a: Record<string, unkno
   const action = String(a.action ?? 'list')
   if (action === 'list')
     return { enabled: s.settings.sentinelEnabled, execution: 'page_open_only', rules: s.sentinels }
+  if (!s.settings.sentinelEnabled) { throw Error('人类尚未开启哨兵授权，AI不能自行开启总开关') }
   if (action === 'create') {
     const kind = String(a.type ?? 'once') as Sentinel['kind']
     if (!['once', 'interval', 'daily'].includes(kind)) throw Error('仅支持 once、interval、daily')

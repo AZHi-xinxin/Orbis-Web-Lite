@@ -152,7 +152,9 @@ test('Messages search preserves signatures, citations and client call inputs acr
   w.messages.push({ ...msg(out.text, 'assistant'), ...out })
   w.messages.push({ ...msg('saved', 'tool'), callId: 'local1' })
   const replay = makeRequest(s, w, turn, enabledTools(s))
-  const content = replay.messages.find((m) => m.role === 'assistant').content
+  const replayed = replay.messages.find((m) => m.role === 'assistant').content
+  const content = replayed.filter(b => !(b.type === 'text' && b.text.startsWith('[宿主消息记录时间，非正文]')))
+  assert.deepEqual(content, out.providerContent)
   assert.equal(content[3].signature, 'opaque-signature')
   assert.equal(content[4].citations[0].encrypted_index, 'opaque-index')
   assert.deepEqual(content[5].input, { body: 'synthetic' })

@@ -108,7 +108,7 @@ test('permissions hide AI voice tools by default; UI voice records do not break 
   assert(!JSON.stringify(body).includes('voiceNote'))
   assert(!JSON.stringify(body).includes('voiceCall'))
   assert.equal(body.messages.length, 3)
-  assert.equal(body.messages[1].content[0].type, 'tool_use')
+  assert.equal(body.messages[1].content.find(b => b.type === 'tool_use').id, 'tc')
   assert.equal(body.messages[2].content[0].type, 'tool_result')
   s.settings.protocol = 'openai'
   const openai = makeRequest(s, w, freezeMemory(s, w.id, 'next', ''), [])

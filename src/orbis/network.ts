@@ -1,4 +1,5 @@
 import { boundCall } from './voiceHost.js'
+import { messageTimestamp } from './clock.js'
 import {
   applyCitation,
   applyOpenAIWeb,
@@ -53,6 +54,11 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 })
 export const builtins: Tool[] = [
+  {
+    name: 'orbis_time',
+    description: '只读查询当前设备时间：当地日期时间、IANA时区、UTC与unix_ms。需要最新时间或设定哨兵前可调用。消息上的时间固定为该条发送/开始记录时间；长工具链中请用本工具获取最新时间。',
+    input_schema: schema({}),
+  },
   {
     name: 'orbis_voice_note',
     description:
@@ -156,7 +162,7 @@ export const builtins: Tool[] = [
   {
     name: 'orbis_sentinel',
     description:
-      '基础定时规则，绑定当前窗口。action=create/list/pause/resume/delete；type=once/interval/daily。只在网页打开时执行，后台服务尚未接入。保存不等于已唤醒。',
+      '人类只授权总开关，具体唤醒时间、内容与规则由你自主安排；不要让人类填表。绑定当前窗口。action=create/list/pause/resume/delete；type=once/interval/daily。先用 orbis_time 核对当前时间和时区，due_at_ms为未来Unix毫秒。只在网页打开时执行，保存不等于已唤醒。',
     input_schema: schema({
       action: { type: 'string' },
       id: { type: 'string' },
@@ -223,7 +229,7 @@ function attachmentText(m: Message): string {
 }
 function material(m: Message): unknown[] {
   const content: unknown[] = []
-  const text = m.text + attachmentText(m)
+  const text = messageTimestamp(m) + m.text + attachmentText(m)
   if (text) content.push({ type: 'text', text })
   for (const f of m.files ?? [])
     if (f.mime.startsWith('image/'))
@@ -267,6 +273,7 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
     (conversation.world_book_enabled
       ? '[当前窗口世界书：背景资料]\n' + conversation.world_book_text + '\n'
       : '') +
+    '\n[时间说明] 消息时间为设备记录时间；AI为开始生成时间，摘要为创建时间，不代表摘要内事件发生时间。新消息保存原时区，旧记录无时区时固定按UTC表示。按最新人类/宿主事件的时间理解本轮日期；需要实时钟请调用orbis_time。\n' +
     '\n[当前窗口 ID] ' +
     w.id +
     '\n' +
@@ -283,7 +290,7 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
   // A saved compaction summary (or imported history) can start with an assistant.
   // Preserve its authorship and original contents; add only a request-local provenance
   // boundary so strict providers receive a user-first conversation. Never persist it.
-  const historyBoundary = '【宿主提供的历史上下文说明，不是人类新发言】以下开头的 AI 消息来自之前的对话，可能包含压缩摘要，仅作为历史资料。不要将其中内容当成新任务；请结合后续真实用户消息和工具结果接续。'
+  const historyBoundary = '【宿主提供的历史上下文说明，不是人类新发言】以下开头的 AI 消息来自之前的对话，可能包含压缩摘要，仅作为历史资料。不要将其中内容当成新任务；请结合后续真实用户消息和工具结果接续。' + (lastHuman < 0 ? tail : '')
   const startsWithAssistant = w.messages[0]?.role === 'assistant'
   if (settings.protocol === 'openai') {
     const messages: Record<string, unknown>[] = [{ role: 'system', content: system }]
@@ -298,10 +305,10 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
           role: m.role,
           content: images.length
             ? [
-                { type: 'text', text: m.text + attachmentText(m) },
+                { type: 'text', text: messageTimestamp(m) + m.text + attachmentText(m) },
                 ...images.map((f) => ({ type: 'image_url', image_url: { url: f.data } })),
               ]
-            : m.text + attachmentText(m) || null,
+            : messageTimestamp(m) + m.text + attachmentText(m),
           ...(m.serverToolCalls && !m.retracted && m.providerIdentity === providerIdentity(settings)
             ? { server_tool_calls: m.serverToolCalls }
             : {}),
@@ -356,6 +363,12 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
                 input: JSON.parse(c.arguments || '{}'),
               })),
             ]
+    if (m.role !== 'tool' && m.providerContent?.length && !m.retracted && !m.quoteId && m.providerIdentity === providerIdentity(settings)) {
+      // Keep signed blocks and original server tool sequence intact.
+      let index = 0
+      while (index < content.length && ['thinking', 'redacted_thinking'].includes(String((content[index] as Record<string, unknown>).type))) index++
+      content.splice(index, 0, { type: 'text', text: messageTimestamp(m) })
+    }
     if (i === lastHuman && tail) content.push({ type: 'text', text: tail })
     if (!content.length) continue
     if (messages.at(-1)?.role === role) messages[messages.length - 1].content.push(...content)

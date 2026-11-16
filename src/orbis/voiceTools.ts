@@ -1,3 +1,4 @@
+import { captureClock } from './clock.js'
 import { windowOf, type Message } from './core.js'
 import { readState, transact, secret } from './storage.js'
 import { speechSettings, speechCredential, synthesizeSpeech } from './speech.js'
@@ -32,7 +33,7 @@ export async function executeVoice(
     }
     return endBoundCall(window, bound)
   }
-  const base: Message = { id, turn, role: 'assistant', text: '', at: Date.now(), status: 'done' }
+  const base: Message = { id, turn, role: 'assistant', text: '', ...captureClock(), status: 'done' }
   if (name === 'orbis_voice_note') {
     if (!cfg.allowVoiceNotes) {
       throw Error('人类尚未开启允许 AI 发语音条')

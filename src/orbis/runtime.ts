@@ -1,5 +1,6 @@
 import { executeVoice } from './voiceTools.js'
 import { boundCall } from './voiceHost.js'
+import { captureClock, clockReading } from './clock.js'
 import {
   compact,
   retract,
@@ -36,6 +37,7 @@ async function execute(
   if (signal.aborted) throw new DOMException('已停止', 'AbortError')
   const s = await readState()
   if (!enabledTools(s, window).some((t) => t.name === name)) throw Error('此工具已关闭或不存在')
+  if (name === 'orbis_time') { return clockReading() }
   if (!builtins.some((t) => t.name === name)) {
     for (const c of s.mcp) {
       const t = c.tools.find((t) => t.enabled && mcpAlias(c.id, t.name) === name)
@@ -134,7 +136,7 @@ export async function generate(
         turn: turnId,
         role: 'user',
         text,
-        at: Date.now(),
+        ...captureClock(),
         files,
         event,
         thought,
@@ -161,7 +163,7 @@ export async function generate(
           turn: turnId,
           role: 'assistant',
           text: '',
-          at: Date.now(),
+          ...captureClock(),
           status: 'working',
           quoteId: nextQuote,
           voiceSessionId: boundCall(window) ?? callBinding,
@@ -220,7 +222,7 @@ export async function generate(
             text: controller.signal.aborted
               ? '已停止，未执行此工具。'
               : '工具执行中；若本页中断，执行结果未知，不自动重试。',
-            at: Date.now(),
+            ...captureClock(),
             status: controller.signal.aborted ? 'stopped' : 'working',
           })
         )

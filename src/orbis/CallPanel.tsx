@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type Message, type VoiceSession } from './core.js'
 import { callDuration } from './callArchive.js'
 import { assetUrl } from './assets.js'
@@ -11,7 +11,7 @@ function CallIcon({ kind }: { kind: 'phone' | 'mic' | 'speaker' }) {
 }
 
 type PanelProps = {
-  name: string; deepseek: boolean; startedAt: number; minimized: boolean; phase: string; caption: string
+  name: string; deepseek: boolean; startedAt: number; minimized: boolean; phase: string; caption: string; captionKey?: string
   recording: boolean; micMuted: boolean; speakerMuted: boolean
   onMinimize: () => void; onExpand: () => void; onMic: () => void; onSpeaker: () => void
   onResumeAudio?: () => void
@@ -19,6 +19,9 @@ type PanelProps = {
 }
 export function CallPanel(p: PanelProps) {
   const [now, setNow] = useState(Date.now())
+  const [fullCaption, setFullCaption] = useState(false)
+  const captionScroll = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (captionScroll.current) captionScroll.current.scrollTop = 0 }, [p.captionKey])
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer) }, [])
   const duration = callDuration({ id: '', startedAt: p.startedAt, status: 'active', summaryStatus: 'pending' }, now)
   if (p.minimized) return <div className="call-mini">
@@ -34,7 +37,15 @@ export function CallPanel(p: PanelProps) {
       <h1>{p.name}</h1><time>{duration}</time>
       <p role="status" className="call-phase"><span className="call-live-dot" />{p.phase}</p>
     </div>
-    <div className="call-caption" aria-label="当前通话字幕">{p.caption}</div>
+    <div className="call-caption">
+      <div className="call-caption-scroll" ref={captionScroll} tabIndex={0} aria-label="当前通话字幕"><p>{p.caption}</p></div>
+      <button className="call-caption-expand" onClick={() => setFullCaption(true)}>查看完整字幕 ↗</button>
+    </div>
+    {fullCaption && <div className="call-caption-overlay" role="dialog" aria-modal="true" aria-label="完整通话字幕">
+      <section><header><strong>完整通话字幕</strong><button onClick={() => setFullCaption(false)} aria-label="关闭完整字幕">×</button></header>
+        <div className="call-caption-full" tabIndex={0}>{p.caption}</div>
+      </section>
+    </div>}
     <div className="call-turn-action">
       {p.onResumeAudio ? <button onClick={p.onResumeAudio}>开启声音并播放</button> : p.recording ? <button onClick={p.onFinish}>说完了，发送本句</button> : p.phase === '正在说' ? <button onClick={p.onInterrupt}>打断本条播报</button> : <span>停顿后自动发送，也可以手动结束本句</span>}
     </div>

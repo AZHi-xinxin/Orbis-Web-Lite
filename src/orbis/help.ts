@@ -64,6 +64,8 @@ orbis_memory action=save/read/update/delete/history/restore/set_state。save 必
 
 挂断后，聊天只显示「通话结束」卡片，AI 使用当前模型自动整理本次已发送内容的总结；这是一次额外模型请求。原消息、音频和工具过程保留，可点「查看完整记录」，总结可展开。总结失败可手动重试，刷新不会自动重复请求；异常中断可手动「结束并整理记录」。完整备份包含通话档案。
 
+通话字幕可上下滑动，点「查看完整字幕」可展开阅读全部文字；新消息重置到开头，同一条流式回复不抢走你的滚动位置。
+
 通话或朗读遇到浏览器播放拦截，会显示「开启声音并播放」，点一下恢复当前音频，不重新合成、不自动重拨。
 
 AI 语音条和来电分别授权：在「语音与电话」开启「允许 AI 发语音条」或「允许 AI 来电」，默认均关闭。语音条需要 DeepSeek TTS，AI 使用 orbis_voice_note 生成真实 WAV，保存在这条聊天里，点击可播放、展开可看文字，普通文字回复不会自动变成语音条。浏览器系统朗读只能读文字，不能生成可保存的音频。
@@ -72,7 +74,7 @@ AI 的 start_voice_call 在当前打开的窗口显示来电邀请，人类点�
   },
   sentinel: {
     title: '基础哨兵与 AI 主动消息',
-    body: `左侧「哨兵与主动消息」打开总开关。可添加一次、每隔若干分钟、每天当地时间的规则，绑定创建时的窗口。AI 获授权后也能调用 orbis_sentinel create/list/pause/resume/delete。daily_at 使用 HH:mm，timezone 使用 IANA 时区，例如 Asia/Shanghai。
+    body: `人类只在左侧「哨兵与主动消息」打开或关闭总授权开关，并查看已保存规则，不需要填写或管理具体规则。AI 获授权后，自主决定一次、间隔或每天的唤醒时间与内容；绑定创建时的窗口。AI 使用 orbis_sentinel create/list/pause/resume/delete。设定前可调用 orbis_time 取得当前设备时间、时区和 Unix 毫秒；daily_at 使用 HH:mm，timezone 使用返回的 IANA 时区。总开关关闭时不触发，AI 不能自行授权；开启不会自动编造或新增规则。
 
 当前版本仅在网页运行期间检查规则；不声称关页、锁屏或后台也能唤醒。晚到超过 5 分钟的事件跳过，避免重开后扎堆发言。领取一次后不自动重试，回执可见；生成失败不代表 AI 已回复。没有屏幕、定位、通知或手机状态监控。导入后不自动恢复任务，防止两端重复执行。`,
   },
@@ -118,7 +120,8 @@ compact：你自己写 summary，keep_recent 保留最近消息数量；不伪�
 context_compaction_status：读上下文估算、阈值、压缩事件。
 orbis_reply：action=quote/retract，target_message_id 必须来自当前窗口实际历史，可先 conversation_read 取 ID；不能编造 ID，不能撤回人类或工具消息。
 orbis_conversation_settings：只有人类授权才可见；inspect/update 当前窗口的提示词与世界书；下轮生效。
-orbis_sentinel：只有总开关开启才可见；create/list/pause/resume/delete；仅网页运行时执行。
+orbis_time：只读查询当前设备时间、时区、UTC和Unix毫秒；每条聊天消息带固定记录时间和时区，旧消息不随当前时间或时区变化而重写；最新用户/宿主事件的时间供理解本轮日期，必要时主动查询最新时间。
+orbis_sentinel：人类只开关授权，规则由你自主安排，只有总开关开启才可见；create/list/pause/resume/delete；仅网页运行时执行。
 orbis_voice_note(text)：仅人类授权后可用，生成并保存语音条；收到 sent 才是成功，不能声称人类已听到。
 start_voice_call(reason,max_ring_seconds)：仅人类授权后可用，等待接听结果，accepted 后简短说开场白；其他结果不自动重拨。
 end_voice_call(call_id可选)：结束当前轮次绑定的通话，不能结束另一场新通话。
