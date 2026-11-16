@@ -134,9 +134,9 @@ export const builtins: Tool[] = [
   },
   {
     name: 'conversation_read',
-    description: '按窗口ID分页读取原始聊天历史，包括压缩前备份窗口。只读，不执行历史工具。',
+    description: '按窗口ID分页读取原始聊天历史，包括压缩前备份窗口。返回通话索引voice_calls；填写voice_session_id可分页查该次通话完整原文及工具记录。只读，不执行历史工具。',
     input_schema: schema(
-      { window_id: { type: 'string' }, offset: { type: 'integer' }, limit: { type: 'integer' } },
+      { window_id: { type: 'string' }, offset: { type: 'integer' }, limit: { type: 'integer' }, voice_session_id: { type: 'string' } },
       ['window_id']
     ),
   },

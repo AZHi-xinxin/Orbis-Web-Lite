@@ -15,6 +15,8 @@ export type Message = {
   text: string
   at: number
   voiceNote?: boolean
+  voiceSessionId?: string
+  voiceSessionEnd?: string
   voiceCall?: { id: string; status: string; reason: string }
   reasoning?: string
   calls?: Call[]
@@ -87,6 +89,20 @@ export type Window = {
   archive?: boolean
   importKey?: string
   conversation?: ConversationSettings
+  voiceSessions?: VoiceSession[]
+}
+export type VoiceSession = {
+  id: string
+  startedAt: number
+  endedAt?: number
+  status: 'active' | 'ended'
+  summaryStatus: 'pending' | 'working' | 'done' | 'failed' | 'empty'
+  summary?: string
+  summaryError?: string
+  attempt?: string
+  source?: string
+  raw?: Message[]
+  usage?: Message['usage']
 }
 export type Sentinel = {
   id: string
@@ -543,16 +559,20 @@ export function searchWindows(s: State, window: string, query: string) {
     }))
     .filter((x) => x.matches.length)
 }
-export function readWindow(s: State, window: string, target: string, offset = 0, limit = 20) {
+export function readWindow(s: State, window: string, target: string, offset = 0, limit = 20, voiceSession?: string) {
   if (windowOf(s, window).mode === 'light' && window !== target)
     throw Error('轻量档仅可读取当前窗口')
   const w = windowOf(s, target),
     n = Math.max(1, Math.min(50, limit)),
     start = Math.max(0, offset)
+  const call = voiceSession ? w.voiceSessions?.find((c) => c.id === voiceSession) : undefined
+  if (voiceSession && !call) throw Error('通话记录不存在')
+  const messages = call ? (call.raw ?? w.messages.filter((m) => m.voiceSessionId === call.id)) : w.messages
   return {
     title: w.title,
-    messages: w.messages.slice(start, start + n),
-    next_offset: start + n < w.messages.length ? start + n : null,
+    messages: messages.slice(start, start + n),
+    next_offset: start + n < messages.length ? start + n : null,
+    voice_calls: w.voiceSessions?.map(({ id, startedAt, endedAt, summary, summaryStatus }) => ({ id, startedAt, endedAt, summary, summaryStatus })),
   }
 }
 export function nextDaily(after: number, clock: string, timezone: string): number {
@@ -669,8 +689,12 @@ export function retract(s: State, window: string, id: string, actor: 'user' | 'a
   const m = windowOf(s, window).messages.find((m) => m.id === id)
   if (!m || m.role !== actor || m.calls?.length || m.status === 'working')
     throw Error('只能撤回自己已完成的文字/语音消息，工具过程不能撤回')
-  for (const w of s.windows)
-    for (const copy of [...w.messages, ...(w.rollback?.originals ?? [])])
+  for (const w of s.windows) {
+    for (const c of w.voiceSessions ?? []) if (c.raw?.some((m) => m.id === id)) {
+      delete c.summary; delete c.source; delete c.attempt
+      c.summaryStatus = 'failed'; c.summaryError = '原消息已撤回；旧总结已移除，可按现有记录重新整理。'
+    }
+    for (const copy of [...w.messages, ...(w.rollback?.originals ?? []), ...(w.voiceSessions ?? []).flatMap((c) => c.raw ?? [])])
       if (copy.id === id) {
         copy.text = ''
         delete copy.thought
@@ -682,6 +706,7 @@ export function retract(s: State, window: string, id: string, actor: 'user' | 'a
         delete copy.web
         copy.retracted = true
       }
+  }
   return { retracted: true, id }
 }
 

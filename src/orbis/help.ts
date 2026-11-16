@@ -60,7 +60,9 @@ orbis_memory action=save/read/update/delete/history/restore/set_state。save 必
 
 点「语音」录音，再点「发送语音」；声音通过 HTTPS 发送到所选 ASR，转写文字发给聊天模型，语音原件保存在本地。最长 120 秒、8 MiB WAV。DeepSeek TTS 将回复文字发到语音服务生成 WAV；语音服务按实际用量计费，不是免费额度承诺。
 
-电话按钮开启前台逐句通话：录音→转写→AI 回复→朗读→继续听。默认检测说话后的停顿自动结束本句，可以在语音设置关闭；也能手动结束本句、打断朗读和挂断。当前不是全双工。挂断会停止麦克风和后续发送，已发给服务端的请求不能倒转。切换窗口会挂断，后台、锁屏或关页面可能暂停。iPhone 麦克风与播放需要真机确认。
+电话按钮打开独立通话界面，显示计时、当前字幕、麦克风/声音开关与挂断，可收起后返回。前台逐句通话流程：录音→转写→AI 回复→朗读→继续听。默认检测说话后的停顿自动结束本句，可以在语音设置关闭；也能手动结束本句、打断朗读和挂断。当前不是全双工。挂断会停止麦克风和后续发送，已发给服务端的请求不能倒转。切换窗口会挂断，后台、锁屏或关页面可能暂停。iPhone 麦克风与播放需要真机确认。
+
+挂断后，聊天只显示「通话结束」卡片，AI 使用当前模型自动整理本次已发送内容的总结；这是一次额外模型请求。原消息、音频和工具过程保留，可点「查看完整记录」，总结可展开。总结失败可手动重试，刷新不会自动重复请求；异常中断可手动「结束并整理记录」。完整备份包含通话档案。
 
 AI 语音条和来电分别授权：在「语音与电话」开启「允许 AI 发语音条」或「允许 AI 来电」，默认均关闭。语音条需要 DeepSeek TTS，AI 使用 orbis_voice_note 生成真实 WAV，保存在这条聊天里，点击可播放、展开可看文字，普通文字回复不会自动变成语音条。浏览器系统朗读只能读文字，不能生成可保存的音频。
 
@@ -109,7 +111,7 @@ iOS Safari 不好连接时可以不接，不影响本地记忆、压缩和聊天
     title: 'AI 工具速查',
     body: `orbis_help：按主题读本文；主题 overview/chat/memory/context/settings/voice/sentinel/mcp/search/data/tools。
 orbis_memory：保存、查询、改状态、历史、软删和恢复；完整例子 {"action":"save","body":"我们约定去海边看星空","summary":"海边星空约定","keywords":["海边","星空"],"state":"conditional"}。
-conversation_search：query 搜当前允许范围，返回窗口与消息标识；conversation_read(window_id,offset,limit) 分页读。
+conversation_search：query 搜当前允许范围，返回窗口与消息标识；conversation_read(window_id,offset,limit) 分页读；返回 voice_calls 通话索引，可附 voice_session_id 查询对应原文，历史工具只作资料，不重放。
 compact：你自己写 summary，keep_recent 保留最近消息数量；不伪造压缩成功。
 context_compaction_status：读上下文估算、阈值、压缩事件。
 orbis_reply：action=quote/retract，target_message_id 必须来自当前窗口实际历史，可先 conversation_read 取 ID；不能编造 ID，不能撤回人类或工具消息。

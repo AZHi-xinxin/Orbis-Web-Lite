@@ -1240,3 +1240,49 @@ h1 {
     margin: 0;
   }
 }
+
+/* A call has its own foreground surface; history stays folded in the ordinary chat. */
+.voice-call-screen { position:fixed; inset:0; z-index:160; display:flex; flex-direction:column; align-items:center; overflow:auto; background:var(--page); color:var(--ink); padding: max(18px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); }
+.voice-call-screen > header { flex:none; width:min(100%,720px); display:flex; align-items:center; justify-content:space-between; color:var(--muted); font-size:13px; letter-spacing:.09em; }
+.call-person { flex:none; text-align:center; margin:clamp(20px,5vh,64px) 0 14px; }
+.call-avatar { width:112px; height:112px; border-radius:50%; background:var(--panel); border:1px solid var(--line); box-shadow:0 8px 40px color-mix(in srgb,var(--green) 13%,transparent); display:grid; place-items:center; margin:0 auto 18px; font-size:42px; }
+.call-avatar img { width:74px; height:74px; }
+.call-avatar.is-speaking { outline:8px solid color-mix(in srgb,var(--green) 9%,transparent); }
+.call-person h1 { font-weight:550; margin:10px 0; font-size:27px; }
+.deepseek .call-person h1 { font-family:inherit; letter-spacing:0; }
+.call-person time { font-variant-numeric:tabular-nums; font-size:18px; color:var(--muted); }
+.call-phase { display:flex; align-items:center; justify-content:center; gap:8px; margin:20px 0 6px; font-size:15px; }
+.call-live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); }
+.call-caption { width:min(100%,560px); min-height:100px; max-height:25vh; overflow:auto; white-space:pre-wrap; background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:22px; font-size:17px; line-height:1.8; flex:1 1 auto; }
+.call-turn-action { min-height:66px; flex:none; display:grid; place-items:center; color:var(--muted); text-align:center; font-size:12px; }
+.call-turn-action button { border:1px solid var(--line); border-radius:24px; padding:10px 24px; color:var(--ink); }
+.call-controls { display:flex; width:min(100%,380px); align-items:center; justify-content:space-around; gap:16px; flex:none; margin:12px 0 24px; }
+.call-controls > div { display:flex; flex-direction:column; align-items:center; gap:10px; font-size:12px; color:var(--muted); }
+.call-controls button { display:grid; place-items:center; width:64px; height:64px; border-radius:50%; background:var(--soft); color:var(--ink); }
+.call-controls button.is-muted { opacity:.6; box-shadow:inset 0 0 0 2px var(--line); }
+.call-controls button.hangup { width:74px; height:74px; background:#df4b61; color:white; }
+.voice-call-screen > footer { margin-top:auto; text-align:center; font-size:11px; line-height:1.9; color:var(--muted); padding-top:8px; flex:none; }
+.call-mini { display:flex; align-items:center; justify-content:space-between; border:1px solid var(--line); background:var(--soft); border-radius:18px; margin:4px 0 10px; font-size:12px; }
+.call-mini > button:first-child { text-align:left; min-width:0; flex:1; }
+.call-mini-hangup { color:#ce4057; flex:none; }
+.voice-call-card { width:min(100%,470px); border:1px solid var(--line); border-radius:18px; padding:18px 20px; background:var(--panel); }
+.voice-call-card-title { display:flex; gap:10px; align-items:center; }
+.voice-call-card-title svg { width:20px; height:20px; color:var(--green); }
+.voice-call-card-title strong { font-size:15px; font-weight:550; }
+.voice-call-card-title time { margin-left:auto; font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.voice-call-card > p { margin:8px 0; font-size:12px; color:var(--muted); }
+.voice-call-card > button { padding:10px 0; color:var(--green); font-size:13px; }
+.call-summary { border-top:1px solid var(--line); padding-top:12px; margin-top:5px; font-size:13px; line-height:1.7; }
+.call-summary summary { cursor:pointer; color:var(--muted); }
+.call-history-overlay { position:fixed; inset:0; background:#0005; z-index:180; padding:16px; display:grid; place-items:center; }
+.call-history-overlay > section { background:var(--page); color:var(--ink); width:min(100%,720px); max-height:92dvh; border-radius:22px; overflow:hidden; display:flex; flex-direction:column; }
+.call-history-overlay header { display:flex; justify-content:space-between; align-items:center; padding:18px 20px; border-bottom:1px solid var(--line); }
+.call-history-overlay header small { display:block; color:var(--muted); margin-top:5px; font-size:11px; }
+.call-history-scroll { padding:20px; overflow:auto; }
+.call-history-scroll h3 { font-size:14px; font-weight:600; }
+.call-history-summary { border-bottom:1px solid var(--line); padding-bottom:16px; margin-bottom:24px; }
+.call-original { padding:14px 0; line-height:1.8; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+.call-original small { color:var(--muted); font-size:11px; }
+.call-original audio { width:100%; max-width:380px; margin-top:10px; }
+.call-original pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
+@media(max-height:650px) { .voice-call-screen { padding-top:8px; } .call-person { margin:8px 0; } .call-avatar { width:64px; height:64px; margin-bottom:5px; } .call-avatar img { width:48px; height:48px; } .call-person h1 { font-size:20px; margin:4px 0; } .call-phase { margin:8px 0; } .call-caption { padding:12px; min-height:70px; } .call-turn-action { min-height:44px; } .call-controls { margin:8px 0; } .call-controls button { width:50px;height:50px; } .call-controls button.hangup { width:58px;height:58px; } }

@@ -67,7 +67,8 @@ async function execute(
           window,
           String(args.window_id ?? window),
           Number(args.offset ?? 0),
-          Number(args.limit ?? 20)
+          Number(args.limit ?? 20),
+          typeof args.voice_session_id === 'string' ? args.voice_session_id : undefined
         )
       if (name === 'compact') {
         const w = windowOf(s, window)
@@ -138,6 +139,7 @@ export async function generate(
         event,
         thought,
         quoteId,
+        voiceSessionId: callBinding,
       }
       w.messages.push(m)
       w.at = Date.now()
@@ -162,6 +164,7 @@ export async function generate(
           at: Date.now(),
           status: 'working',
           quoteId: nextQuote,
+          voiceSessionId: boundCall(window) ?? callBinding,
         })
       })
       nextQuote = undefined
@@ -212,6 +215,7 @@ export async function generate(
             id: toolId,
             turn: turnId,
             role: 'tool',
+            voiceSessionId: boundCall(window) ?? callBinding,
             callId: call.id,
             text: controller.signal.aborted
               ? '已停止，未执行此工具。'

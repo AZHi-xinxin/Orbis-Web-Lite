@@ -57,6 +57,9 @@ import { connectMcp } from './network.js'
 import { generate, stopGeneration } from './runtime.js'
 import { acquire, readState, saveSecret, secret, transact } from './storage.js'
 import './style.css'
+import { beginVoiceSession, finishVoiceSession, callDisplayMessages } from './callArchive.js'
+import { summarizeVoiceSession, stopCallSummary } from './callSummary.js'
+import { CallPanel, CallHistoryCard } from './CallPanel.js'
 const modes: Record<Mode, string> = {
   light: '轻量 · 当前窗口',
   standard: '标准 · 跨窗按需',
@@ -104,6 +107,12 @@ export function App() {
     [attachmentsOpen, setAttachmentsOpen] = useState(false)
   const [invitation, setInvitation] = useState<Invitation | undefined>()
   const acceptedCall = useRef<Invitation | undefined>(undefined)
+  const activeSession = useRef<{ window: string; id: string } | undefined>()
+  const pendingCallArchive = useRef<{ window: string; id: string; endedAt: number } | undefined>()
+  const [callMinimized, setCallMinimized] = useState(false)
+  const [callMicMuted, setCallMicMuted] = useState(false)
+  const [callSpeakerMuted, setCallSpeakerMuted] = useState(false)
+  const micMuted = useRef(false), speakerMuted = useRef(false)
   const sendRef = useRef(send)
   sendRef.current = send
   const hangupRef = useRef(hangup)
@@ -238,6 +247,7 @@ export function App() {
       recordingGeneration.current++
       releaseSpeech()
       stopGeneration()
+      stopCallSummary()
     }
   }, [])
   useEffect(() => {
@@ -252,6 +262,10 @@ export function App() {
         !voiceRequest.current,
       accept: (invite) => {
         prepareSpeech()
+        activeSession.current = { window: invite.window, id: invite.id }
+        setCallMinimized(false); setCallMicMuted(false); micMuted.current = false
+        setCallSpeakerMuted(false); speakerMuted.current = false
+        void transact((s) => beginVoiceSession(s, invite.window, invite.id)).catch(fail)
         acceptedCall.current = invite
       },
       end: () => hangupRef.current(false),
@@ -392,6 +406,7 @@ export function App() {
           hangup(false)
         }
       }
+      if (pendingCallArchive.current) await finalizePendingCall()
     }
   }
   async function openAcceptedCall(invite: Invitation) {
@@ -416,7 +431,7 @@ export function App() {
             m.turn === invite.turn
         )
         .at(-1)
-      if (reply?.text) {
+      if (reply?.text && !speakerMuted.current) {
         setVoicePhase('准备朗读')
         await speakText(reply.text, latest.settings, controller.signal, () =>
           setVoicePhase('正在说')
@@ -502,6 +517,10 @@ export function App() {
     autoEndTimer.current = null
   }
   function hangup(stopModel = true) {
+    if (activeSession.current) {
+      pendingCallArchive.current = { ...activeSession.current, endedAt: Date.now() }
+      activeSession.current = undefined
+    }
     clearActiveCall()
     acceptedCall.current = undefined
     callRef.current = false
@@ -520,6 +539,46 @@ export function App() {
     if (stopModel) {
       stopGeneration()
     }
+    if (!busyRef.current && pendingCallArchive.current) void finalizePendingCall()
+  }
+  async function finalizePendingCall() {
+    const ended = pendingCallArchive.current
+    if (!ended) return
+    pendingCallArchive.current = undefined
+    busyRef.current = true; setBusy(true)
+    try {
+      const saved = await transact((s) => finishVoiceSession(s, ended.window, ended.id, ended.endedAt))
+      setState(saved.state)
+      await summarizeVoiceSession(ended.window, ended.id)
+    } catch (error) { fail(error) }
+    finally { busyRef.current = false; setBusy(false); await refresh() }
+  }
+  async function retryCallSummary(id: string) {
+    if (busyRef.current) return
+    busyRef.current = true; setBusy(true)
+    try {
+      await transact((s) => {
+        const w = windowOf(s, active), c = w.voiceSessions?.find((c) => c.id === id)
+        if (c?.status === 'active') finishVoiceSession(s, active, id,
+          Math.max(c.startedAt, ...w.messages.filter((m) => m.voiceSessionId === id).map((m) => m.at)))
+      })
+      await summarizeVoiceSession(active, id, true)
+    }
+    catch (error) { fail(error) }
+    finally { busyRef.current = false; setBusy(false); await refresh() }
+  }
+  function toggleCallMic() {
+    micMuted.current = !micMuted.current; setCallMicMuted(micMuted.current)
+    if (micMuted.current) {
+      recordingGeneration.current++; clearVoiceTimer(); recordingRef.current?.cancel()
+      recordingRef.current = null; setRecording(false)
+      if (voicePhase === '正在转写') voiceRequest.current?.abort()
+      if (!busyRef.current && voicePhase !== '正在说') setVoicePhase('麦克风已关闭')
+    } else if (!busyRef.current && voicePhase !== '正在说') void beginRecord()
+  }
+  function toggleCallSpeaker() {
+    speakerMuted.current = !speakerMuted.current; setCallSpeakerMuted(speakerMuted.current)
+    if (speakerMuted.current) stopSpeech()
   }
   useEffect(() => {
     if (
@@ -534,6 +593,7 @@ export function App() {
       hangup()
   }, [active])
   async function beginRecord() {
+    if (callRef.current && micMuted.current) { setVoicePhase('麦克风已关闭'); return }
     if (recordingPending.current || recordingRef.current || !w) return
     const generation = ++recordingGeneration.current
     recordingPending.current = true
@@ -618,7 +678,7 @@ export function App() {
             (m) => m.role === 'assistant' && !m.calls?.length && !m.retracted && m.status === 'done'
           )
           .at(-1)
-        if (reply?.text) {
+        if (reply?.text && !speakerMuted.current) {
           setVoicePhase('准备朗读')
           try {
             await speakText(reply.text, latest.settings, controller.signal, () =>
@@ -677,7 +737,12 @@ export function App() {
       fail(e)
       return
     }
-    setActiveCall(active, uid())
+    const id = uid()
+    await transact((s) => beginVoiceSession(s, active, id))
+    activeSession.current = { window: active, id }
+    setActiveCall(active, id)
+    setCallMinimized(false); setCallMicMuted(false); micMuted.current = false
+    setCallSpeakerMuted(false); speakerMuted.current = false
     callRef.current = true
     setCall(true)
     await beginRecord()
@@ -746,7 +811,7 @@ export function App() {
       fail(e)
     }
   }
-  const shown = w?.messages.map((m) => (partial?.id === m.id ? partial : m)) ?? []
+  const shown = w ? callDisplayMessages(w, w.messages.map((m) => (partial?.id === m.id ? partial : m))) : []
   if (!ready) return <div className="loading">✦ 正在打开你的 Orbis…</div>
   return (
     <div className={'orbis ' + state.settings.style + (deepseek ? ' deepseek' : '')}>
@@ -964,7 +1029,11 @@ export function App() {
           )}
           {shown.map((m) => (
             <article key={m.id} className={'message ' + m.role} id={'msg-' + m.id}>
-              {m.role === 'tool' ? (
+              {m.voiceSessionEnd ? (
+                <CallHistoryCard call={w.voiceSessions!.find((c) => c.id === m.voiceSessionEnd)!}
+                  messages={w.messages} name={state.settings.name} live={call && activeSession.current?.id === m.voiceSessionEnd}
+                  busy={busy} onRetry={() => void retryCallSummary(m.voiceSessionEnd!)} onReturn={() => setCallMinimized(false)} />
+              ) : m.role === 'tool' ? (
                 <details className="tool">
                   <summary>{m.status === 'working' ? '◌' : '◇'} 工具结果</summary>
                   <pre>{m.text}</pre>
@@ -1109,21 +1178,14 @@ export function App() {
             </div>
           )}
           {call && (
-            <div className="call-bar">
-              ◉ 前台语音通话 · {voicePhase || (recording ? '正在听' : '准备下一句')}
-              {recording && <button onClick={() => void finishRecord()}>结束本句</button>}
-              {voicePhase === '正在说' && (
-                <button
-                  onClick={() => {
-                    stopSpeech()
-                    setVoicePhase('准备下一句')
-                  }}
-                >
-                  打断朗读
-                </button>
-              )}
-              <button onClick={() => void toggleCall()}>挂断</button>
-            </div>
+            <CallPanel name={state.settings.name} deepseek={deepseek} minimized={callMinimized}
+              startedAt={w.voiceSessions?.find((c) => c.id === activeSession.current?.id)?.startedAt ?? Date.now()}
+              phase={voicePhase || (recording ? '正在听' : '准备下一句')} recording={recording}
+              caption={partial?.text || w.messages.filter((m) => m.voiceSessionId === activeSession.current?.id && m.role !== 'tool' && !m.voiceCall && !m.calls?.length).at(-1)?.text || '接通了，随时开口。'}
+              micMuted={callMicMuted} speakerMuted={callSpeakerMuted}
+              onMinimize={() => setCallMinimized(true)} onExpand={() => setCallMinimized(false)}
+              onMic={toggleCallMic} onSpeaker={toggleCallSpeaker} onHangup={() => hangup()}
+              onFinish={() => void finishRecord()} onInterrupt={() => { stopSpeech(); setVoicePhase('准备下一句') }} />
           )}
           {expanded && !state.settings.storageNoticeSeen && (
             <div className="storage-reminder">
@@ -1235,6 +1297,7 @@ export function App() {
                   className="send"
                   onClick={() => {
                     stopGeneration()
+                    stopCallSummary()
                     setNotice('已请求停止，工具结果未知时不会自动重试')
                   }}
                 >

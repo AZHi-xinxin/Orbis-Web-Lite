@@ -320,6 +320,19 @@ function validateState(s: State) {
       throw Error('窗口格式错误')
     ids.add(w.id)
     for (const m of w.messages) validateMessage(m)
+    if (w.voiceSessions !== undefined) {
+      if (!Array.isArray(w.voiceSessions)) throw Error('通话档案格式错误')
+      const callIds = new Set<string>()
+      for (const c of w.voiceSessions) {
+        if (typeof c.id !== 'string' || callIds.has(c.id) || !Number.isFinite(c.startedAt) ||
+          !['active','ended'].includes(c.status) || !['pending','working','done','failed','empty'].includes(c.summaryStatus) ||
+          (c.endedAt !== undefined && (!Number.isFinite(c.endedAt) || c.endedAt < c.startedAt)) ||
+          (c.summary !== undefined && typeof c.summary !== 'string') ||
+          (c.raw !== undefined && !Array.isArray(c.raw))) throw Error('通话档案格式错误')
+        callIds.add(c.id)
+        c.raw?.forEach(validateMessage)
+      }
+    }
     if (w.rollback) {
       if (!Array.isArray(w.rollback.originals)) throw Error('回退点格式错误')
       w.rollback.originals.forEach(validateMessage)
@@ -348,6 +361,7 @@ function validateMessage(m: Message) {
   if (m.voiceNote !== undefined && typeof m.voiceNote !== 'boolean') {
     throw Error('语音条格式错误')
   }
+  if (m.voiceSessionId !== undefined && typeof m.voiceSessionId !== 'string') throw Error('通话归属格式错误')
   if (
     m.voiceCall &&
     (typeof m.voiceCall.id !== 'string' ||

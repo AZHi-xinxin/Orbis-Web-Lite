@@ -4,10 +4,13 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright,expect
 OUT=Path(os.environ.get('ORBIS_TEST_OUTPUT','/tmp/orbis-alpha6-browser'));OUT.mkdir(parents=True,exist_ok=True)
 URL=os.environ.get('ORBIS_TEST_URL','http://127.0.0.1:18791/orbis-web/')
-requests=[];speech=[]
+requests=[];speech=[];summaries=[]
 def model(route):
  body=route.request.post_data_json;requests.append(body)
  last=body['messages'][-1]['content']
+ if '你正在整理刚结束的语音通话' in json.dumps(body.get('system'),ensure_ascii=False):
+  assert not body.get('tools');summaries.append(body)
+  route.fulfill(status=200,content_type='text/event-stream',body='data: '+json.dumps({'type':'content_block_start','index':0,'content_block':{'type':'text','text':'本次聊了合成通话，已确认结束；没有新增待办。'}},ensure_ascii=False)+'\n\ndata: {"type":"message_stop"}\n\n');return
  if last and last[-1].get('type')=='tool_result':
   blocks=[{'type':'text','text':'合成开场白。'}]
  else:
@@ -69,15 +72,49 @@ with sync_playwright() as p:
  page.evaluate(RESET)
  # Accept -> finish model -> opening TTS -> mic. AI can end its bound call without aborting generation.
  send('请来电，测试接听');expect(page.get_by_role('dialog',name='AI 来电')).to_be_visible();assert page.evaluate('micRequests')==0
- page.screenshot(path=str(OUT/'incoming.png'));page.get_by_role('button',name='接听',exact=True).click();done();expect(page.locator('.call-bar')).to_contain_text('正在听',timeout=15000)
- assert page.evaluate('micRequests')==1;page.wait_for_timeout(500);page.locator('.call-bar').get_by_role('button',name='结束本句').click()
- expect(page.locator('.call-bar')).to_have_count(0,timeout=15000);done();assert page.evaluate('micStreams.every(s=>s.getTracks().every(t=>t.readyState==="ended"))')
+ page.screenshot(path=str(OUT/'incoming.png'));page.get_by_role('button',name='接听',exact=True).click();done();expect(page.locator('.voice-call-screen')).to_contain_text('正在听',timeout=15000)
+ assert page.evaluate('micRequests')==1;page.wait_for_timeout(500);page.locator('.voice-call-screen').get_by_role('button',name='说完了，发送本句').click()
+ expect(page.locator('.voice-call-screen')).to_have_count(0,timeout=15000);done();assert page.evaluate('micStreams.every(s=>s.getTracks().every(t=>t.readyState==="ended"))')
+ expect(page.locator('.voice-call-card')).to_have_count(1)
+ expect(page.locator('.voice-call-card')).to_contain_text('已归档')
+ assert len(summaries)==1
+ state=page.evaluate(READ);call=state['windows'][0]['voiceSessions'][0]
+ assert call['status']=='ended' and call['summaryStatus']=='done'
+ assert any(m.get('files') for m in call['raw'])
+ assert any(m.get('voiceSessionId')==call['id'] for m in state['windows'][0]['messages'])
+ page.locator('.voice-call-card').get_by_role('button',name='查看完整记录').click()
+ expect(page.get_by_role('dialog',name='完整通话记录')).to_contain_text('合成挂断')
+ expect(page.get_by_role('dialog',name='完整通话记录').locator('audio')).to_have_count(1)
+ page.screenshot(path=str(OUT/'call-records.png'));page.get_by_role('button',name='关闭通话记录').click()
+ page.reload();expect(page.locator('.voice-call-card')).to_contain_text('已归档');assert len(summaries)==1
  # Stop while ringing cancels; timeout doesn't open mic; reload doesn't redial.
  send('请来电，测试停止');expect(page.get_by_role('dialog',name='AI 来电')).to_be_visible();page.get_by_role('button',name='停止 ■',exact=True).click();done();expect(page.get_by_role('dialog',name='AI 来电')).to_have_count(0)
- send('请来电，测试超时');expect(page.get_by_role('dialog',name='AI 来电')).to_be_visible();done();expect(page.get_by_role('dialog',name='AI 来电')).to_have_count(0);assert page.evaluate('micRequests')==1
- page.reload();expect(page.get_by_role('dialog',name='AI 来电')).to_have_count(0);expect(page.locator('.call-bar')).to_have_count(0)
+ send('请来电，测试超时');expect(page.get_by_role('dialog',name='AI 来电')).to_be_visible();done();expect(page.get_by_role('dialog',name='AI 来电')).to_have_count(0);assert page.evaluate('micRequests')==0
+ page.reload();expect(page.get_by_role('dialog',name='AI 来电')).to_have_count(0);expect(page.locator('.voice-call-screen')).to_have_count(0)
+ # Human initiated call: independent UI, minimize/restore and mute controls, empty hangup.
+ page.get_by_role('button',name='开始语音通话',exact=True).click()
+ expect(page.get_by_role('dialog',name='语音通话',exact=True)).to_be_visible()
+ page.get_by_role('dialog',name='语音通话',exact=True).get_by_role('button',name='关闭麦克风',exact=True).click()
+ expect(page.get_by_role('button',name='打开麦克风',exact=True)).to_be_visible()
+ assert page.evaluate('micStreams.every(s=>s.getTracks().every(t=>t.readyState==="ended"))')
+ page.get_by_role('button',name='关闭声音',exact=True).click()
+ expect(page.get_by_role('button',name='打开声音',exact=True)).to_be_visible()
+ page.screenshot(path=str(OUT/'call-fullscreen.png'))
+ page.get_by_role('dialog',name='语音通话',exact=True).get_by_role('button',name='收起',exact=True).click()
+ expect(page.locator('.call-mini')).to_be_visible()
+ page.get_by_role('button',name='返回通话界面',exact=True).click()
+ expect(page.get_by_role('dialog',name='语音通话',exact=True)).to_be_visible()
+ for width in [320,390,768,1280]:
+  page.set_viewport_size({'width':width,'height':844})
+  assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),width
+  expect(page.get_by_role('button',name='挂断通话',exact=True)).to_be_in_viewport()
+ page.set_viewport_size({'width':390,'height':844})
+ page.get_by_role('button',name='挂断通话',exact=True).click();done()
+ expect(page.locator('.voice-call-card')).to_have_count(2)
+ assert len(summaries)==1 # An empty call must not request a model summary.
+ page.screenshot(path=str(OUT/'call-ended.png'))
  # Human voice entry produces saved local audio; default model response remains text.
  page.get_by_role('button',name='录制语音条',exact=True).click();expect(page.locator('.recording-strip')).to_be_visible();page.wait_for_timeout(500);page.get_by_role('button',name='取消录音',exact=True).click();expect(page.locator('.recording-strip')).to_have_count(0)
  page.screenshot(path=str(OUT/'voice-history.png'));assert not errors,errors
- result={'passed':True,'requests':len(requests),'speech':speech,'page_errors':errors,'checks':['one-row 320/390/768/1280','collapse persisted','thought disabled hidden and unsent draft retained','AI voice generated saved playable after reload','reject no microphone','cooldown','accept opening then microphone','AI bound hangup','stop ringing','timeout','reload no redial','human recording entry and cancel']}
+ result={'passed':True,'requests':len(requests),'speech':speech,'page_errors':errors,'checks':['one-row 320/390/768/1280','collapse persisted','thought disabled hidden and unsent draft retained','AI voice generated saved playable after reload','reject no microphone','cooldown','accept opening then microphone','AI bound hangup','one isolated summary','raw audio retained','manual call','minimize restores','mic and speaker controls','empty call no model request','4 viewport call controls','refresh no summary replay','stop ringing','timeout','reload no redial','human recording entry and cancel']}
  (OUT/'result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2));print(json.dumps(result,ensure_ascii=False));b.close()
