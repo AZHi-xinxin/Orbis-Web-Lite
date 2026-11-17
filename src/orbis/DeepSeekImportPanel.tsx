@@ -169,7 +169,7 @@ export function DeepSeekImportPanel({
       error = e instanceof Error ? e.message : '导入中断'
     } finally {
       await release?.()
-      const text = `DeepSeek 已导入 ${imported} 个会话，重复跳过 ${skipped} 个；恢复 ${restored} 个图片/音频，${references} 个附件保留引用。${error ? '未全部完成：' + error : '已完成。'}`
+      const text = `DeepSeek 已导入 ${imported} 个会话，重复跳过 ${skipped} 个；恢复 ${restored} 个附件，${references} 个附件保留引用。${error ? '未全部完成：' + error : '已完成。'}`
       setProgress(text)
       notify(text)
       setWorking(false)
@@ -250,6 +250,7 @@ export function DeepSeekImportPanel({
                   />
                   {p.title}
                 </label>
+                {p.warnings?.map((warning, i) => <p className="subtle" key={i}>{warning}</p>)}
                 <label>
                   分支（共 {p.messages} 条消息）
                   <select
@@ -261,7 +262,7 @@ export function DeepSeekImportPanel({
                     {p.branches.map((b, i) => (
                       <option key={b.id} value={b.id}>
                         {b.id === p.selected ? '原包当前分支 · ' : `分支 ${i + 1} · `}
-                        {b.count} 条 · {new Date(b.at).toLocaleString()}
+                        {b.count} 条 · {b.timeUnknown ? '原时间未知' : new Date(b.at).toLocaleString()}
                       </option>
                     ))}
                   </select>
@@ -276,11 +277,10 @@ export function DeepSeekImportPanel({
               disabled={working || busy}
               onChange={(e) => setMedia(e.target.checked)}
             />
-            同时恢复包内图片与音频
+            同时恢复包内图片、音频与文档
           </label>
           <p className="subtle">
-            默认导入文字，附件保留引用。恢复媒体时单文件最多 16 MiB、每会话合计 64 MiB；PDF
-            等其他附件仍保留引用。原 ZIP
+            默认导入文字，附件保留引用。恢复附件时单文件最多 16 MiB、每会话合计 64 MiB；PDF、TXT、Markdown、CSV、DOCX、XLSX 可下载，其他类型保留引用。原 ZIP
             请继续保存。每个会话单独保存，取消或空间不足时保留已完成部分，再导入会去重。
           </p>
           <button

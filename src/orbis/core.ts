@@ -20,6 +20,10 @@ export type Message = {
   voiceSessionId?: string
   voiceSessionEnd?: string
   voiceCall?: { id: string; status: string; reason: string }
+  sourceTimeUnknown?: boolean
+  sourceTimestamp?: string | null
+  reasoningMs?: number
+  importHistory?: { text: string; record: Record<string, unknown> }[]
   reasoning?: string
   calls?: Call[]
   callId?: string
@@ -91,6 +95,7 @@ export type Window = {
   messages: Message[]
   compressions: Compression[]
   rollback?: { event: string; originals: Message[] }
+  pinned?: boolean
   archive?: boolean
   importKey?: string
   conversation?: ConversationSettings

@@ -19,7 +19,7 @@ export const universalChat = (s: State) => ({
                 ? '\n[附件原件请另存] ' + m.files.map((f) => f.name).join('、')
                 : ''),
         ...(m.reasoning ? { reasoning: m.reasoning } : {}),
-        timestamp: new Date(m.at).toISOString(),
+        ...(m.sourceTimeUnknown ? {} : { timestamp: new Date(m.at).toISOString() }),
       })),
     })),
 })
@@ -315,6 +315,7 @@ function validateState(s: State) {
       typeof w.id !== 'string' ||
       ids.has(w.id) ||
       typeof w.title !== 'string' ||
+      (w.pinned !== undefined && typeof w.pinned !== 'boolean') ||
       !['light', 'standard', 'independent'].includes(w.mode) ||
       !Array.isArray(w.messages) ||
       !Array.isArray(w.compressions)
@@ -365,6 +366,12 @@ function validateMessage(m: Message) {
     !Number.isFinite(m.at)
   )
     throw Error('消息格式错误')
+  if ((m.sourceTimeUnknown !== undefined && typeof m.sourceTimeUnknown !== 'boolean') ||
+    (m.sourceTimestamp != null && typeof m.sourceTimestamp !== 'string') ||
+    (m.reasoningMs !== undefined && (!Number.isFinite(m.reasoningMs) || m.reasoningMs < 0)) ||
+    (m.importHistory !== undefined && (!Array.isArray(m.importHistory) || m.importHistory.some(h =>
+      !h || typeof h.text !== 'string' || h.text.length > 32768 || !h.record || typeof h.record !== 'object' || Array.isArray(h.record)))))
+    { throw Error('导入历史格式错误') }
   if (m.timeZone !== undefined && typeof m.timeZone !== 'string') throw Error('消息时区格式错误')
   if (m.voiceNote !== undefined && typeof m.voiceNote !== 'boolean') {
     throw Error('语音条格式错误')
@@ -390,7 +397,7 @@ function validateMessage(m: Message) {
   for (const f of m.files ?? [])
     if (
       typeof f.data !== 'string' ||
-      !/^data:(image\/[\w.+-]+|audio\/[\w.+-]+|text\/plain)[;,]/.test(f.data)
+      !/^data:(image\/[\w.+-]+|audio\/[\w.+-]+|text\/(?:plain|markdown|csv)|application\/(?:pdf|vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|spreadsheetml\.sheet)))[;,]/.test(f.data)
     )
       throw Error('附件类型不支持')
 }

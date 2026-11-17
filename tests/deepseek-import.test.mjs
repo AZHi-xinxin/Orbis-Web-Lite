@@ -122,3 +122,39 @@ test('CRC corruption, duplicate paths, bad count and expansion limits fail befor
   const v=new DataView(body.buffer), ee=e+firstSize;v.setUint16(ee+8,v.getUint16(ee+8,true)+1,true);v.setUint16(ee+10,v.getUint16(ee+10,true)+1,true);v.setUint32(ee+12,v.getUint32(ee+12,true)+firstSize,true)
   await assert.rejects(()=>LocalZip.open(new Blob([body])),/重复/)
 })
+
+test('missing index, missing times and file metadata recover locally with warnings and full-backup roundtrip', async () => {
+  const raw=session();delete raw.inserted_at;delete raw.updated_at;delete raw.messages[0].inserted_at
+  raw.pinned=true;raw.messages[1].inserted_at='invalid';raw.messages[1].fragments[0].elapsed_secs=2.5
+  raw.messages[1].fragments.push({type:'TOOL_SEARCH',status:'FINISHED',results:[{url:'https://example.invalid/no-fetch',title:'Synthetic source'}]})
+  const path=`chat_sessions/${raw.id}_files/report.pdf`, bytes=strToU8('%PDF-synthetic')
+  raw.messages[0].fragments.push({type:'FILE',files:[{file_name:'report.pdf',export_path:path}]})
+  const archive=await DeepSeekArchive.open(new Blob([zipSync({
+    '导出/manifest.json':strToU8('{"export_format_version":3}'),
+    [`导出/chat_sessions/${raw.id}.json`]:strToU8(JSON.stringify(raw)),
+    ['导出/'+path]:bytes,
+  })]))
+  const preview=(await archive.inspect())[0]
+  assert.equal(preview.selected,'2');assert.equal(preview.warnings.length,2)
+  const {window:w,restored}=await archive.prepare(raw.id,'2',true)
+  assert.equal(restored,1);assert.equal(w.pinned,true);assert.ok(w.messages.every(m=>m.sourceTimeUnknown))
+  assert.equal(w.messages[1].sourceTimestamp,'"invalid"');assert.equal(w.messages[1].reasoningMs,2500)
+  assert.ok(!w.messages[1].elapsedMs);assert.ok(!w.messages[1].calls);assert.equal(w.messages[1].importHistory.length,1)
+  assert.equal(w.messages[0].files[0].mime,'application/pdf')
+  const state=initialState();appendDeepSeek(state,w);const restoredState=initialState();restoreBackup(restoredState,fullBackup(state))
+  assert.deepEqual(restoredState.windows.at(-1).messages,state.windows.at(-1).messages)
+  assert.equal(restoredState.windows.at(-1).pinned,true)
+  const { messageTimestamp } = await import('../.test-build/src/orbis/clock.js')
+  assert.equal(messageTimestamp(w.messages[0]),'[导入记录：原消息时间未知]\n')
+  const { universalChat } = await import('../.test-build/src/orbis/backup.js')
+  assert.ok(!universalChat(state).conversations.at(-1).messages[0].timestamp)
+})
+test('existing corrupt index, conflicting export roots and declared bad size still reject', async () => {
+  const raw=session(), contents={ 'manifest.json':strToU8('{"export_format_version":3}'), [`chat_sessions/${raw.id}.json`]:strToU8(JSON.stringify(raw)) }
+  await assert.rejects(()=>DeepSeekArchive.open(new Blob([zipSync({...contents,'chat_session_index.json':strToU8('{invalid}')} )])))
+  await assert.rejects(()=>DeepSeekArchive.open(new Blob([zipSync({...contents,...Object.fromEntries(Object.entries(contents).map(([k,v])=>['other/'+k,v]))})])))
+  const path=`chat_sessions/${raw.id}_files/bad.txt`
+  raw.messages[0].fragments.push({type:'FILE',files:[{file_name:'bad.txt',export_path:path,file_size:99}]})
+  const archive=await DeepSeekArchive.open(new Blob([v3([raw],{[path]:strToU8('short')})]))
+  await assert.rejects(()=>archive.inspect())
+})

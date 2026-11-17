@@ -11,6 +11,7 @@ type Node = {
   role: 'user' | 'assistant'
   at: number
   depth: number
+  timeUnknown?: boolean
 }
 type Conversation = {
   id: string
@@ -18,13 +19,16 @@ type Conversation = {
   at: number
   nodes: Map<string, Node>
   selected: string
+  pinned: boolean
+  warnings: string[]
 }
 export type DeepSeekPreview = {
   id: string
   title: string
   messages: number
   selected: string
-  branches: { id: string; count: number; at: number }[]
+  branches: { id: string; count: number; at: number; timeUnknown?: boolean }[]
+  warnings: string[]
 }
 function requireValue(
   ok: unknown,
@@ -50,11 +54,10 @@ const numericId = (x: unknown) => {
   requireValue(Number.isSafeInteger(x) && Number(x) >= 0)
   return String(x)
 }
-const date = (x: unknown) => {
-  requireValue(typeof x === 'string')
+const date = (x: unknown): number | undefined => {
+  if (typeof x !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(x)) { return undefined }
   const n = Date.parse(x)
-  requireValue(Number.isFinite(n) && n >= 0)
-  return n
+  return Number.isFinite(n) && n >= 0 && n <= 253402300799999 ? n : undefined
 }
 const hash = async (x: unknown) =>
   Array.from(
@@ -68,8 +71,8 @@ const hash = async (x: unknown) =>
 export function parseDeepSeek(value: unknown): Conversation {
   const raw = object(value),
     id = identity(raw.id),
-    at = date(raw.inserted_at)
-  date(raw.updated_at)
+    at = date(raw.inserted_at) ?? date(raw.updated_at) ?? Date.now()
+  let unknownTimes = date(raw.inserted_at) === undefined || date(raw.updated_at) === undefined
   requireValue(raw.title == null || typeof raw.title === 'string')
   const title = typeof raw.title === 'string' && raw.title.trim() ? raw.title : '未命名会话'
   const nodes = new Map<string, Node>()
@@ -96,7 +99,8 @@ export function parseDeepSeek(value: unknown): Conversation {
         children: [],
         message: m,
         role: 'user',
-        at: date(m.inserted_at),
+        at: date(m.inserted_at) ?? at,
+        timeUnknown: date(m.inserted_at) === undefined,
         depth: 0,
       })
     }
@@ -129,7 +133,8 @@ export function parseDeepSeek(value: unknown): Conversation {
         children,
         message: m,
         role: 'user',
-        at: m ? date(m.inserted_at) : at,
+        at: m ? date(m.inserted_at) ?? at : at,
+        timeUnknown: !!m && date(m.inserted_at) === undefined,
         depth: 0,
       })
     }
@@ -146,6 +151,7 @@ export function parseDeepSeek(value: unknown): Conversation {
     requireValue(!visited.has(node.id))
     visited.add(node.id)
     if (node.message) {
+      unknownTimes ||= !!node.timeUnknown
       const fragments = array(node.message.fragments).map(object),
         types = fragments.map((f) => identity(f.type))
       const user = types.some((t) => ['REQUEST', 'FILE'].includes(t)),
@@ -157,6 +163,7 @@ export function parseDeepSeek(value: unknown): Conversation {
             'TOOL_SEARCH',
             'TOOL_OPEN',
             'TOOL_FIND',
+            'TOOL_IMAGE_SEARCH',
             'TEMPLATE_RESPONSE',
             'READ_LINK',
             'PARTIAL_FILE_READ',
@@ -188,10 +195,11 @@ export function parseDeepSeek(value: unknown): Conversation {
   if (selected === undefined) {
     selected = [...nodes.values()]
       .filter((n) => !n.children.length)
-      .sort((a, b) => b.at - a.at || b.id.localeCompare(a.id))[0]?.id
+      .sort((a, b) => (b.timeUnknown ? 0 : b.at) - (a.timeUnknown ? 0 : a.at) || b.id.localeCompare(a.id))[0]?.id
   }
   requireValue(selected && nodes.has(selected))
-  return { id, title, at, nodes, selected }
+  return { id, title, at, nodes, selected, pinned: raw.pinned === true,
+    warnings: unknownTimes ? ['部分原时间缺失或无效；消息顺序保留，显示为“原时间未知”，排序使用会话时间或导入时间。'] : [] }
 }
 const pathTo = (s: Conversation, leaf: string) => {
   let node = s.nodes.get(leaf)
@@ -210,15 +218,20 @@ export class DeepSeekArchive {
     private zip: LocalZip,
     private prefix: string,
     private index: Map<string, ObjectValue>,
-    private legacy?: string
+    private legacy?: string,
+    private indexed = true
   ) {}
   static async open(file: Blob) {
     const zip = await LocalZip.open(file)
     const names = [...zip.entries.keys()].filter((n) => !n.startsWith('__MACOSX/'))
     const indexes = names.filter((n) => n.split('/').pop() === 'chat_session_index.json')
-    if (indexes.length) {
-      requireValue(indexes.length === 1)
-      const prefix = indexes[0].slice(0, -'chat_session_index.json'.length)
+    const manifests = names.filter(n => n.split('/').pop() === 'manifest.json' &&
+      names.some(path => path.startsWith(n.slice(0, -'manifest.json'.length) + 'chat_sessions/') && path.endsWith('.json')))
+    if (indexes.length || manifests.length) {
+      requireValue(indexes.length <= 1 && manifests.length === 1)
+      const prefix = manifests[0].slice(0, -'manifest.json'.length)
+      const indexed = indexes.length === 1
+      requireValue(!indexed || indexes[0] === prefix + 'chat_session_index.json')
       const manifest = object(await zip.json(prefix + 'manifest.json'))
       requireValue(
         Number.isSafeInteger(manifest.export_format_version) &&
@@ -226,7 +239,11 @@ export class DeepSeekArchive {
         '此 DeepSeek 导出版本尚未支持，请保留原包'
       )
       const index = new Map<string, ObjectValue>()
-      for (const x of array(await zip.json(indexes[0]))) {
+      const headers = indexed ? array(await zip.json(indexes[0])) : names
+        .filter(n => n.startsWith(prefix + 'chat_sessions/') && n.endsWith('.json') &&
+          !n.slice((prefix + 'chat_sessions/').length).includes('/'))
+        .sort().map(n => ({ id: n.slice(n.lastIndexOf('/') + 1, -5) }))
+      for (const x of headers) {
         const h = object(x),
           id = identity(h.id)
         requireValue(
@@ -234,11 +251,11 @@ export class DeepSeekArchive {
             !index.has(id) &&
             zip.entries.has(prefix + 'chat_sessions/' + id + '.json')
         )
-        requireValue(Number.isSafeInteger(h.message_count) && Number(h.message_count) >= 0)
+        if (indexed) { requireValue(Number.isSafeInteger(h.message_count) && Number(h.message_count) >= 0) }
         index.set(id, h)
       }
       requireValue(index.size > 0)
-      return new DeepSeekArchive(zip, prefix, index)
+      return new DeepSeekArchive(zip, prefix, index, undefined, indexed)
     }
     const entries = names.filter((n) => n.split('/').pop() === 'conversations.json')
     requireValue(
@@ -276,7 +293,7 @@ export class DeepSeekArchive {
       raw = await this.zip.json(this.prefix + 'chat_sessions/' + id + '.json')
     }
     requireValue(object(raw).id === id)
-    if (!this.legacy) {
+    if (!this.legacy && this.indexed) {
       requireValue(array(object(raw).messages).length === this.index.get(id)?.message_count)
     }
     const s = parseDeepSeek(raw)
@@ -295,7 +312,7 @@ export class DeepSeekArchive {
               path.split('/').length === 3
           )
           const entry = this.zip.entries.get(this.prefix + path)
-          requireValue(!entry || entry.size === ref.file_size)
+          requireValue(!entry || ref.file_size == null || entry.size === ref.file_size)
         }
       }
     }
@@ -308,11 +325,12 @@ export class DeepSeekArchive {
       result.push({
         id: s.id,
         title: s.title,
+        warnings: [...s.warnings, ...(!this.indexed ? ['原包缺少索引，已从同一导出目录恢复列表；请核对窗口和消息数量。'] : [])],
         messages: [...s.nodes.values()].filter((n) => n.message).length,
         selected: s.selected,
         branches: [...s.nodes.values()]
           .filter((n) => !n.children.length || n.id === s.selected)
-          .map((n) => ({ id: n.id, count: n.depth, at: n.at })),
+          .map((n) => ({ id: n.id, count: n.depth, at: n.at, timeUnknown: n.timeUnknown })),
       })
       progress(result.length, this.legacy ? result.length : ids.length)
     }
@@ -335,6 +353,7 @@ export class DeepSeekArchive {
       id: windowId,
       title: s.title,
       mode: 'standard',
+      pinned: s.pinned,
       at: s.at,
       messages: [],
       compressions: [],
@@ -345,6 +364,8 @@ export class DeepSeekArchive {
       mediaBytes = 0
     const savedMedia = new Map<string, NonNullable<Message['files']>[number]>()
     for (const n of path) {
+      let reasoningMs = 0
+      const importHistory: NonNullable<Message['importHistory']> = []
       const text: string[] = [],
         thinking: string[] = [],
         files: NonNullable<Message['files']> = []
@@ -354,6 +375,7 @@ export class DeepSeekArchive {
           typeof f.content === 'string'
         ) {
           ;(f.type === 'THINK' ? thinking : text).push(f.content)
+          if (f.type === 'THINK' && typeof f.elapsed_secs === 'number' && Number.isFinite(f.elapsed_secs) && f.elapsed_secs >= 0 && f.elapsed_secs <= 315360000) { reasoningMs += f.elapsed_secs * 1000 }
         } else if (f.type === 'FILE' && Array.isArray(f.files) && f.files.length) {
           for (const v of f.files) {
             const ref = object(v),
@@ -371,6 +393,9 @@ export class DeepSeekArchive {
                 wav: 'audio/wav',
                 m4a: 'audio/mp4',
                 ogg: 'audio/ogg',
+                pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown', csv: 'text/csv',
+                docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
               } as Record<string, string>
             )[name.split('.').pop()?.toLowerCase() ?? '']
             if (media && mime && typeof p === 'string' && this.zip.entries.has(this.prefix + p)) {
@@ -379,7 +404,7 @@ export class DeepSeekArchive {
                 mediaBytes += this.zip.entries.get(this.prefix + p)?.size ?? 0
                 requireValue(
                   mediaBytes <= 64 * 1024 * 1024,
-                  '此会话图片与音频超过 64 MiB，请取消勾选附件后导入文字；原件仍在 ZIP 中'
+                  '此会话附件超过 64 MiB，请取消勾选附件后导入文字；原件仍在 ZIP 中'
                 )
                 const bytes = await this.zip.read(this.prefix + p, 16 * 1024 * 1024)
                 let binary = ''
@@ -402,7 +427,11 @@ export class DeepSeekArchive {
             }
           }
         } else {
-          text.push('[DeepSeek 历史记录；未执行]\n' + JSON.stringify(f))
+          const history = '[DeepSeek 历史记录；未执行]\n' + JSON.stringify(f)
+          text.push(history)
+          if (['SEARCH','TOOL_SEARCH','TOOL_OPEN','TOOL_FIND','TOOL_IMAGE_SEARCH','READ_LINK'].includes(String(f.type)) && history.length <= 32768) {
+            importHistory.push({ text: history, record: f })
+          }
         }
       }
       w.messages.push({
@@ -412,6 +441,9 @@ export class DeepSeekArchive {
         text: text.join('\n'),
         at: n.at,
         status: 'done',
+        ...(n.timeUnknown ? { sourceTimeUnknown: true, sourceTimestamp: n.message?.inserted_at == null ? null : JSON.stringify(n.message.inserted_at) } : {}),
+        ...(importHistory.length ? { importHistory } : {}),
+        ...(reasoningMs ? { reasoningMs } : {}),
         ...(thinking.length ? { reasoning: thinking.join('\n') } : {}),
         ...(files.length ? { files } : {}),
       })

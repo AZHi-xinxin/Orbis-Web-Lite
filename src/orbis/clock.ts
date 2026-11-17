@@ -27,6 +27,7 @@ export function messageTimestamp(m: Message): string {
   // Assistant messages are examples of how to reply. Putting host metadata in
   // those bodies teaches the model to emit it, especially after compaction.
   if (m.role !== 'user') return ''
+  if (m.sourceTimeUnknown) { return '[导入记录：原消息时间未知]\n' }
   return '[宿主消息记录时间，非正文] ' + JSON.stringify({
     at: localTimestamp(m.at, m.timeZone ?? 'UTC'), time_zone: m.timeZone ?? 'UTC',
     unix_ms: m.at, role: m.role, event: m.event === true,

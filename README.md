@@ -1,4 +1,4 @@
-# Orbis Web Lite — 0.1.0-alpha.15
+# Orbis Web Lite — 0.1.0-alpha.16
 
 单一 AI、多窗口的 Orbis 网页实验版，面向 iPhone、iPad 与桌面浏览器，不需要旁边运行安卓设备或登录 Orbis 社区。基于 [DeepSeek chat-demo](https://github.com/deepseek-ai/chat-demo) 的 Markdown、SSE 与音频录制组件，移植 Orbis 的记忆/压缩行为。
 
@@ -14,7 +14,9 @@
 
 手机是否要服务器、电脑是否要一直开着、清缓存的影响、Android 迁移、缓存与后台哨兵等问题，见 [完整 FAQ](docs/FAQ.zh-CN.md)。
 
-DeepSeek 官端 ZIP 可在「导入与导出 → 导入 DeepSeek 官端聊天」选择会话与分支。支持新版分会话包、旧版 conversations.json、空标题、长消息和变化的历史片段；大包按需读取，聊天按 80 条分页显示。可选恢复包内图片和音频，其他附件保留引用，原 ZIP 请继续保存。详见 [alpha.11 发布说明](docs/RELEASE-0.1.0-alpha.11.md)。
+DeepSeek 官端 ZIP 可在「导入与导出 → 导入 DeepSeek 官端聊天」选择会话与分支。支持新版分会话包、旧版 conversations.json、空标题、长消息和变化的历史片段；大包按需读取，聊天按 80 条分页显示。可选恢复包内图片、音频及 PDF/TXT/Markdown/CSV/DOCX/XLSX 文档，其他附件保留引用，原 ZIP 请继续保存。详见 [alpha.11 发布说明](docs/RELEASE-0.1.0-alpha.11.md)。
+
+alpha.16 补充 DeepSeek 缺失可选字段及索引恢复、原时间未知标记、置顶和思考时长、只读历史检索卡片及文档下载，详见 [本版说明](docs/RELEASE-0.1.0-alpha.16.md)。
 
 alpha.15 将本地语义检索未就绪或不可用时的回退改为静默处理，继续发送消息时不再弹出提示；详见 [本版说明](docs/RELEASE-0.1.0-alpha.15.md)。
 

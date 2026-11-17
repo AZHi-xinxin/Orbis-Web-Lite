@@ -1,3 +1,4 @@
+import { ImportHistory, importedBody } from './ImportHistory.js'
 import { localTimestamp } from './clock.js'
 import { ContextActions } from './ContextActions.js'
 import { forkWindow } from './contextActions.js'
@@ -871,7 +872,7 @@ export function App() {
                   .toLocaleLowerCase()
                   .includes(windowQuery.trim().toLocaleLowerCase())
             )
-            .sort((a, b) => b.at - a.at)
+            .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.at - a.at)
             .map((x) => (
               <button
                 key={x.id}
@@ -882,7 +883,7 @@ export function App() {
                 }}
               >
                 <span>
-                  {x.archive ? '▧' : '○'}　{x.title}
+                  {x.pinned ? '📌' : x.archive ? '▧' : '○'}　{x.title}
                 </span>
                 <small>
                   {modes[x.mode]}
@@ -1063,7 +1064,7 @@ export function App() {
                   <div className="speaker">
                     {m.role === 'user' ? (m.event ? '定时唤醒' : '我') : state.settings.name}
                     <time>
-                      {new Date(m.at).toLocaleTimeString([], {
+                      {m.sourceTimeUnknown ? '原时间未知' : new Date(m.at).toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
@@ -1099,12 +1100,12 @@ export function App() {
                       )}
                       {m.reasoning && (
                         <details className="thought">
-                          <summary>思考过程</summary>
+                          <summary>思考过程{m.reasoningMs ? ` · ${(m.reasoningMs / 1000).toFixed(1)} 秒` : ''}</summary>
                           <p>{m.reasoning}</p>
                         </details>
                       )}
                       {bubbles(
-                        m.voiceNote || m.voiceCall ? '' : m.text,
+                        m.voiceNote || m.voiceCall ? '' : m.importHistory?.length ? importedBody(m) : m.text,
                         state.settings.split && m.role === 'assistant'
                       )
                         .filter(
@@ -1124,12 +1125,13 @@ export function App() {
                             ) : null}
                           </div>
                         ))}
+                      <ImportHistory message={m} />
                       {m.files?.map((f) =>
                         f.mime.startsWith('image/') ? (
                           <img className="attachment" key={f.id} src={f.data} alt={f.name} />
                         ) : f.mime.startsWith('audio/') ? (
                           <audio key={f.id} controls src={f.data} />
-                        ) : null
+                        ) : <p key={f.id}><a href={f.data} download={f.name}>下载附件：{f.name}</a></p>
                       )}
                       {m.voiceNote && (
                         <details className="voice-transcript">
