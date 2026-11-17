@@ -123,12 +123,6 @@ export async function generate(
     searchTools((await readState()).settings)
     release = await acquire(window)
     if (controller.signal.aborted) return false
-    const remembered = event
-      ? { selection: [] }
-      : await recall(await readState(), window, text, controller.signal)
-    if (controller.signal.aborted) return false
-    if (remembered.error)
-      windowNotice('本地语义召回暂不可用：' + remembered.error + '；本轮继续使用关键词与工具查询')
     const begin = await transact((s) => {
       const w = windowOf(s, window)
       const m: Message = {
@@ -146,10 +140,17 @@ export async function generate(
       w.messages.push(m)
       w.at = Date.now()
       if (w.title === '新的聊天') w.title = text.slice(0, 24) || '语音聊天'
-      return freezeMemory(s, window, turnId, event ? '' : text, remembered.selection)
     })
     onState(begin.state)
-    const turn = begin.result
+    const remembered = event
+      ? { selection: [] }
+      : await recall(begin.state, window, text, controller.signal)
+    if (controller.signal.aborted) return false
+    if (remembered.error)
+      windowNotice('本地语义召回暂不可用：' + remembered.error + '；本轮继续使用关键词与工具查询')
+    const frozen = await transact((s) => freezeMemory(s, window, turnId, event ? '' : text, remembered.selection))
+    onState(frozen.state)
+    const turn = frozen.result
     for (let step = 0; step < 12; step++) {
       if (controller.signal.aborted) break
       responseId = uid()

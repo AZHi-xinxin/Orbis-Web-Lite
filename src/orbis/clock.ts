@@ -24,8 +24,36 @@ export function clockReading(clock = captureClock()) {
 }
 /** Stable per-message provenance: never use the current clock or device zone here. */
 export function messageTimestamp(m: Message): string {
+  // Assistant messages are examples of how to reply. Putting host metadata in
+  // those bodies teaches the model to emit it, especially after compaction.
+  if (m.role !== 'user') return ''
   return '[宿主消息记录时间，非正文] ' + JSON.stringify({
     at: localTimestamp(m.at, m.timeZone ?? 'UTC'), time_zone: m.timeZone ?? 'UTC',
     unix_ms: m.at, role: m.role, event: m.event === true,
   }) + '\n'
+}
+
+/** Request/display projection only. Stored history and exports remain untouched. */
+export function assistantBody(text: string, streaming = false): string {
+  const marker = '[宿主消息记录时间，非正文]'
+  let rest = text
+  for (;;) {
+    const head = rest.trimStart()
+    if (streaming && head && marker.startsWith(head)) return ''
+    if (!head.startsWith(marker)) return rest
+    const json = head.slice(marker.length).trimStart()
+    if (!json.startsWith('{')) return streaming && !json ? '' : rest
+    // The host envelope has only scalar fields. Do not remove arbitrary JSON,
+    // dates, quoted examples, code blocks or markers in the middle of prose.
+    const end = json.indexOf('}')
+    if (end < 0) return streaming && json.length < 1000 ? '' : rest
+    try {
+      const value = JSON.parse(json.slice(0, end + 1))
+      if (Object.keys(value).sort().join(',') !== 'at,event,role,time_zone,unix_ms' ||
+          value.role !== 'assistant' || typeof value.event !== 'boolean' ||
+          typeof value.at !== 'string' || typeof value.time_zone !== 'string' ||
+          typeof value.unix_ms !== 'number' || !Number.isFinite(value.unix_ms)) return rest
+    } catch { return rest }
+    rest = json.slice(end + 1).trimStart()
+  }
 }

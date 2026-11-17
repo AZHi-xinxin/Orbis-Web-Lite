@@ -39,6 +39,7 @@ import { KeyStorageChoice, StoragePanel } from './StoragePanel.js'
 import { SearchResults } from './SearchResults.js'
 import { supportsWeb } from './webSearch.js'
 import { bubbles } from './bubbles.js'
+import { assistantBody } from './clock.js'
 import {
   claimSentinels,
   initialState,
@@ -814,7 +815,8 @@ export function App() {
   const history = useMemo(() => w ? callDisplayMessages(w, w.messages.map((m) => (partial?.id === m.id ? partial : m))) : [], [w, partial])
   const pageEnd = historyPage?.window === w?.id && !partial ? Math.min(historyPage.end, history.length) : history.length
   const pageStart = Math.max(0, pageEnd - 80)
-  const shown = history.slice(pageStart, pageEnd)
+  const shown = history.slice(pageStart, pageEnd).map(m => m.role === 'assistant'
+    ? { ...m, text: assistantBody(m.text, m.status === 'working') } : m)
   if (!ready) return <div className="loading">✦ 正在打开你的 Orbis…</div>
   return (
     <div className={'orbis ' + state.settings.style + (deepseek ? ' deepseek' : '')}>

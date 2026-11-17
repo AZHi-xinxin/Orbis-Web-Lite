@@ -3,7 +3,7 @@ import {
   type ConversationSettings,
   type GenerationOptions,
 } from './configuration.js'
-import { captureClock } from './clock.js'
+import { assistantBody, captureClock } from './clock.js'
 /** Orbis behavioral port. Local history is data; never an instruction or an executable replay. */
 export type Mode = 'light' | 'standard' | 'independent'
 export type NoteState = 'static' | 'conditional' | 'pinned' | 'paused'
@@ -683,14 +683,14 @@ export function displayText(_s: State, w: Window, m: Message): string {
   let text =
     m.thought !== undefined
       ? '【人类思考链】\n' + (m.thought || '（为空）') + '\n【正文回复】\n' + m.text
-      : m.text
+      : m.role === 'assistant' ? assistantBody(m.text) : m.text
   if (m.quoteId) {
     const source = w.messages.find((x) => x.id === m.quoteId)
     text =
       '[引用历史消息 ' +
       m.quoteId +
       ']\n' +
-      (source && !source.retracted ? source.text : '引用内容已撤回或不可用') +
+      (source && !source.retracted ? (source.role === 'assistant' ? assistantBody(source.text) : source.text) : '引用内容已撤回或不可用') +
       '\n[本条正文]\n' +
       text
   }

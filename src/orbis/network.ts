@@ -1,5 +1,5 @@
 import { boundCall } from './voiceHost.js'
-import { messageTimestamp } from './clock.js'
+import { assistantBody, messageTimestamp } from './clock.js'
 import {
   applyCitation,
   applyOpenAIWeb,
@@ -274,7 +274,7 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
     (conversation.world_book_enabled
       ? '[当前窗口世界书：背景资料]\n' + conversation.world_book_text + '\n'
       : '') +
-    '\n[时间说明] 消息时间为设备记录时间；AI为开始生成时间，摘要为创建时间，不代表摘要内事件发生时间。新消息保存原时区，旧记录无时区时固定按UTC表示。按最新人类/宿主事件的时间理解本轮日期；需要实时钟请调用orbis_time。\n' +
+    '\n[时间说明] 人类/宿主事件前的时间标记仅供理解日期，不是聊天正文、不是输出模板，不要复述标记、JSON或添加时间前缀。直接回复正文；人类明确询问时间时用自然语言回答。摘要创建时间不代表摘要内事件发生时间。新消息保存原时区，旧记录无时区时固定按UTC表示。按最新人类/宿主事件的时间理解本轮日期；需要实时钟请调用orbis_time。\n' +
     '\n[当前窗口 ID] ' +
     w.id +
     '\n' +
@@ -364,7 +364,12 @@ export function makeRequest(s: State, w: Window, turn: Turn, tools: Tool[]) {
                 input: JSON.parse(c.arguments || '{}'),
               })),
             ]
-    if (m.role !== 'tool' && m.providerContent?.length && !m.retracted && !m.quoteId && m.providerIdentity === providerIdentity(settings)) {
+    if (m.role === 'assistant' && m.providerContent?.length && !m.retracted && !m.quoteId && m.providerIdentity === providerIdentity(settings)) {
+      for (const block of content as Record<string, unknown>[]) {
+        if (block.type === 'text' && typeof block.text === 'string') block.text = assistantBody(block.text)
+      }
+    }
+    if (m.role === 'user' && m.providerContent?.length && !m.retracted && !m.quoteId && m.providerIdentity === providerIdentity(settings)) {
       // Keep signed blocks and original server tool sequence intact.
       let index = 0
       while (index < content.length && ['thinking', 'redacted_thinking'].includes(String((content[index] as Record<string, unknown>).type))) index++

@@ -42,7 +42,7 @@ AI 消息下方「用量记录 · 用时…」可展开查看发送、生成、�
 
 orbis_memory action=save/read/update/delete/history/restore/set_state。save 必填 body，summary 为摘要，keywords/tags 为触发词。默认 static 只保存；conditional 按关键词浮现；pinned 常驻；paused 停止自动浮现但仍可工具查询。read 可按 id/query 分页；history 查看版本；delete 软删除；restore 可指定旧 revision。长原文不会被悄悄截断。
 
-本地语义召回使用 Android Orbis 同款 BGE 模型，从已提交、未撤销的压缩摘要生成 180 字 / 重叠 30 字片段，挑选最多 3 个相关片段。首次加载约 38 MB，计算在浏览器 Worker 中，不上传至向量服务。新模型尚需 iPhone 性能实测；下载/计算失败会提示，本轮仍可工具查记忆。大库优先索引最新 64 片段，旧记录仍可查询。
+本地语义召回使用 Android Orbis 同款 BGE 模型，从已提交、未撤销的压缩摘要生成 180 字 / 重叠 30 字片段，挑选最多 3 个相关片段。首次加载约 38 MB，计算在浏览器 Worker 中，不上传至向量服务。发送先保存人类消息，语义检索最多等待1.5秒；尚未就绪时继续聊天，关键词记忆与工具查询仍可用。冷加载可继续供后续轮使用，迟到结果不会补进已经发送的请求；初始化60秒仍未完成会释放。停止会取消当前检索。不同手机的性能仍需实际体验。大库优先索引最新 64 片段，旧记录仍可查询。
 
 每轮选中的注入内容冻结，工具续轮不反复重抽。暂停、删除或关闭注入会立即过滤。原文更新不会把新版本偷偷替换进本轮；下轮再选择。AI 可 conversation_search 查旧窗口，再 conversation_read 分页读原文。`,
   },

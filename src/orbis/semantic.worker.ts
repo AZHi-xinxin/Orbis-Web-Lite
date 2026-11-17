@@ -3,6 +3,10 @@ import * as ort from 'onnxruntime-web/wasm'
 import { normalize, similarity, wordpiece } from './wordpiece.js'
 type Chunk = { id: string; revision: number; eventId: string; text: string }
 let session: ort.InferenceSession | undefined, tokenize: ReturnType<typeof wordpiece>
+let initializing: Promise<void> | undefined
+let queue = Promise.resolve()
+const cancelled = new Set<string>()
+const jobs = new Set<string>()
 const cache = new Map<string, number[]>()
 async function checked(path: string, sha: string) {
   const r = await fetch(path)
@@ -55,13 +59,18 @@ async function encode(text: string, query = false) {
     if (output) Object.values(output).forEach((t) => t.dispose())
   }
 }
-onmessage = async (event: MessageEvent<{ id: string; query: string; chunks: Chunk[] }>) => {
-  const { id, query, chunks } = event.data
+type Query = { id: string; query: string; chunks: Chunk[]; deadline: number }
+async function retrieve({ id, query, chunks, deadline }: Query) {
+  const expired = () => cancelled.has(id) || Date.now() >= deadline
   try {
-    await init()
+    if (expired()) return
+    initializing ??= init().then(() => { postMessage({ ready: true }) })
+    await initializing
+    if (expired()) return
     const q = await encode(query, true),
       ranked: { chunk: Chunk; vector: number[]; score: number }[] = []
     for (const chunk of chunks) {
+      if (expired()) return
       const key = chunk.id + ':' + chunk.revision + ':' + chunk.text
       let vector = cache.get(key)
       if (!vector) {
@@ -71,6 +80,7 @@ onmessage = async (event: MessageEvent<{ id: string; query: string; chunks: Chun
       }
       ranked.push({ chunk, vector, score: similarity(q, vector) })
     }
+    if (expired()) return
     ranked.sort((a, b) => b.score - a.score)
     const chosen: typeof ranked = []
     for (const hit of ranked) {
@@ -90,5 +100,18 @@ onmessage = async (event: MessageEvent<{ id: string; query: string; chunks: Chun
     postMessage({ id, selection: chosen.map((x) => ({ ...x.chunk, kind: 'semantic' })) })
   } catch (error) {
     postMessage({ id, error: error instanceof Error ? error.message : String(error) })
+  } finally {
+    cancelled.delete(id)
+    jobs.delete(id)
   }
+}
+onmessage = (event: MessageEvent<Query & { cancel?: string }>) => {
+  if (event.data.cancel) {
+    if (jobs.has(event.data.cancel)) cancelled.add(event.data.cancel)
+    return
+  }
+  jobs.add(event.data.id)
+  // Serialize inference and share initialization even if an earlier chat stopped
+  // waiting while the model was downloading.
+  queue = queue.then(() => retrieve(event.data))
 }

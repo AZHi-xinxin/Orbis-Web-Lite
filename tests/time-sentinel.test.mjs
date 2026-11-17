@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { captureClock, localTimestamp, clockReading } from '../.test-build/src/orbis/clock.js'
+import { assistantBody, captureClock, localTimestamp, clockReading, messageTimestamp } from '../.test-build/src/orbis/clock.js'
 import { initialState, freezeMemory, sentinelAction, claimSentinels } from '../.test-build/src/orbis/core.js'
 import { makeRequest, enabledTools } from '../.test-build/src/orbis/network.js'
 const msg=(id,role,text,at,rest={})=>({id,role,text,at,turn:'turn-'+id,...rest})
@@ -19,7 +19,8 @@ for(const protocol of ['messages','openai'])test(`${protocol}: time metadata pre
  w.messages=[msg('old','user','旧消息',at-120000),msg('u','user','你好',at-90000,{timeZone:'Asia/Shanghai'}),msg('a','assistant','',at-80000,{timeZone:'Asia/Shanghai',calls:[{id:'clock-call',name:'orbis_time',arguments:'{}'}],thinkingBlocks:[signed[0]]}),msg('t','tool','{"ok":true}',at-70000,{callId:'clock-call'}),msg('answer','assistant','回答',at-60000,{timeZone:'Asia/Shanghai'}),msg('u2','user','现在几点',at,{timeZone:'Asia/Shanghai'})]
  const before=structuredClone(w.messages),turn=freezeMemory(s,w.id,'current','现在几点')
  const req=makeRequest(s,w,turn,[]),text=JSON.stringify(req)
- for(const m of w.messages.filter(m=>m.role!=='tool'))assert.ok(text.includes(localTimestamp(m.at,m.timeZone??'UTC')))
+ for(const m of w.messages.filter(m=>m.role==='user'))assert.ok(text.includes(localTimestamp(m.at,m.timeZone??'UTC')))
+ for(const m of w.messages.filter(m=>m.role==='assistant'))assert.equal(messageTimestamp(m),'')
  assert.match(text,/Asia\/Shanghai/);assert.deepEqual(w.messages,before)
  assert.equal(text.includes('keep-exact'),protocol==='messages')
  if(protocol==='messages'){
@@ -35,6 +36,27 @@ for(const protocol of ['messages','openai'])test(`${protocol}: time metadata pre
  assert.match(JSON.stringify(req2),/02:40:00-08:00/)
  assert.ok(enabledTools(s).some(t=>t.name==='orbis_time'))
  assert.equal(clockReading().unix_ms,at+600000)
+})
+const echoed='[宿主消息记录时间，非正文] '+JSON.stringify({at:'2026-11-17T09:19:30+08:00',time_zone:'Asia/Shanghai',unix_ms:1794878370026,role:'assistant',event:false})+'\n'
+test('only validated leading host envelopes are hidden, literal dates and examples survive',()=>{
+ assert.equal(assistantBody(echoed+echoed+'我在。'),'我在。')
+ for(const text of ['2026-11-17 我在。','示例：'+echoed,'```json\n'+echoed+'```','[宿主消息记录时间，非正文] {"at":"自己写的"}',echoed.replace('assistant','user')+'原话'])assert.equal(assistantBody(text),text)
+ assert.equal(assistantBody('[宿主消息记录时间，非正文] {"at":',true),'')
+ assert.equal(assistantBody('[宿主消息记录时间，非正文] {"at":',false),'[宿主消息记录时间，非正文] {"at":')
+})
+for(const protocol of ['messages','openai'])test(`${protocol}: echoed assistant metadata is not recycled and signed tool blocks remain intact`,async()=>{
+ const {providerIdentity}=await import('../.test-build/src/orbis/webSearch.js')
+ const s=initialState(),w=s.windows[0];s.settings.protocol=protocol;s.settings.autoInject=false
+ const signed={type:'thinking',thinking:'原始思考',signature:'exact-signature'}
+ const tool={type:'tool_use',name:'orbis_time',id:'tool-1',input:{}}
+ w.messages=[msg('u','user','现在几点',Date.now(),{timeZone:'Asia/Shanghai'}),msg('a','assistant',echoed+echoed+'我在。',Date.now(),{providerIdentity:providerIdentity(s.settings),providerContent:[signed,{type:'text',text:echoed+echoed+'我在。'},tool],calls:[{id:'tool-1',name:'orbis_time',arguments:'{}'}]}),msg('t','tool','{"time":"09:19"}',Date.now(),{callId:'tool-1'}),msg('u2','user','继续聊天',Date.now())]
+ const original=structuredClone(w.messages),r=makeRequest(s,w,freezeMemory(s,w.id,'next','继续聊天'),[])
+ const assistant=r.messages.find(m=>m.role==='assistant')
+ assert.equal(JSON.stringify(assistant).includes('宿主消息记录时间'),false)
+ assert.ok(JSON.stringify(assistant).includes('我在。'))
+ if(protocol==='messages'){assert.deepEqual(assistant.content[0],signed);assert.deepEqual(assistant.content.at(-1),tool)}
+ assert.deepEqual(w.messages,original)
+ assert.match(r.system??r.messages[0].content,/不要复述标记/)
 })
 test('only human master permission enables AI rule creation; toggling creates no rule and disabled rules never fire',()=>{
  const s=initialState(),w=s.windows[0],args={action:'create',type:'once',name:'合成规则',prompt:'AI 自己的安排',due_at_ms:Date.now()+60000,timezone:'Asia/Shanghai'}
