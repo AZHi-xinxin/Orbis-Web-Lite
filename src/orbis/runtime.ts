@@ -22,7 +22,7 @@ import { builtins, callMcp, enabledTools, mcpAlias, streamModel, type Output } f
 import { conversationSettings } from './configuration.js'
 import { helpTopic } from './help.js'
 import { finishWeb, searchTools } from './webSearch.js'
-import { recall, windowNotice } from './semantic.js'
+import { recall } from './semantic.js'
 let current: AbortController | undefined
 export const stopGeneration = () => current?.abort()
 async function execute(
@@ -146,8 +146,7 @@ export async function generate(
       ? { selection: [] }
       : await recall(begin.state, window, text, controller.signal)
     if (controller.signal.aborted) return false
-    if (remembered.error)
-      windowNotice('本地语义召回暂不可用：' + remembered.error + '；本轮继续使用关键词与工具查询')
+    // Recall is optional: continue quietly with keyword memory when it is unavailable.
     const frozen = await transact((s) => freezeMemory(s, window, turnId, event ? '' : text, remembered.selection))
     onState(frozen.state)
     const turn = frozen.result

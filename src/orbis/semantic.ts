@@ -84,7 +84,6 @@ export function recall(
       // frozen request; a later turn can use the warm model and cached vectors.
       try { target.postMessage({ cancel: id }) } catch { reset(target) }
       finish({ selection: [] })
-      windowNotice('本地语义检索尚未就绪，本轮已继续发送；关键词记忆和记忆查询仍可用')
     }, recallBudget)
     target.addEventListener('message', message)
     target.addEventListener('error', error)
@@ -97,7 +96,4 @@ export function recall(
     try { target.postMessage({ id, query: query.slice(0, 700), chunks, deadline: Date.now() + recallBudget }) }
     catch { error() }
   })
-}
-export function windowNotice(message: string) {
-  globalThis.window?.dispatchEvent(new CustomEvent('orbis-notice', { detail: message }))
 }

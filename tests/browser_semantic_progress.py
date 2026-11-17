@@ -25,6 +25,7 @@ with sync_playwright() as p:
   expect(page.locator('.message.user').filter(has_text=text)).to_be_visible(timeout=1200)
   expect(page.locator('main')).to_contain_text('收到第'+str(n)+'条合成消息',timeout=5000)
   expect(page.locator('main')).not_to_contain_text('宿主消息记录时间')
+  expect(page.locator('.notice').filter(has_text='本地语义')).to_have_count(0)
   return round(time.monotonic()-start,3)
  times=[submit('三个字',1),submit('四个字了',2),submit('更长的一段话，用来验证压缩后发送能够继续。'*10,3)]
  assert all(t<5 for t in times);assert len(requests)==3 and page.evaluate('workerStarts')==1
@@ -37,5 +38,5 @@ with sync_playwright() as p:
  assert len([m for m in state['windows'][0]['messages'] if m['role']=='user'])==5
  page.reload();assert len(requests)==4;expect(page.locator('main')).not_to_contain_text('宿主消息记录时间');expect(page.locator('main')).to_contain_text('2026-11-17 是普通日期')
  page.screenshot(path=str(OUT/'continued.png'));assert not errors,errors
- result={'passed':True,'sendSeconds':times,'modelRequests':4,'stalledWorkerReused':True,'stopNoProviderRequest':True,'workerConstructionFailureContinues':True,'messagesSavedBeforeRecall':True,'rawHistoryAndMemoryPreserved':True,'oldAndStreamedEnvelopesHidden':True,'normalDatesKept':True,'reloadNoReplay':True,'pageErrors':errors}
+ result={'passed':True,'sendSeconds':times,'modelRequests':4,'stalledWorkerReused':True,'stopNoProviderRequest':True,'workerConstructionFailureContinues':True,'semanticFallbackSilent':True,'messagesSavedBeforeRecall':True,'rawHistoryAndMemoryPreserved':True,'oldAndStreamedEnvelopesHidden':True,'normalDatesKept':True,'reloadNoReplay':True,'pageErrors':errors}
  (OUT/'result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2));print(result);b.close()
