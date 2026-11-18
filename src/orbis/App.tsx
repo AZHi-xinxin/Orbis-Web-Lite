@@ -36,6 +36,7 @@ import {
   transcribeSpeech,
 } from './speech.js'
 import { SpeechPanel } from './SpeechPanel.js'
+import { FeedbackPanel } from './FeedbackPanel.js'
 import { KeyStorageChoice, StoragePanel } from './StoragePanel.js'
 import { SearchResults } from './SearchResults.js'
 import { supportsWeb } from './webSearch.js'
@@ -81,6 +82,7 @@ type Panel =
   | 'backup'
   | 'help'
   | 'profile'
+  | 'feedback'
 const bytes = (n: number) =>
   n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.ceil(n / 1024) + ' KB'
 const base64 = (file: Blob) =>
@@ -1497,6 +1499,7 @@ export function App() {
               Orbis Web Lite ·{' '}
               <button onClick={() => setPanel('backup')}>本地存储与清理提醒</button> ·{' '}
               <button onClick={() => setPanel('backup')}>导出留存</button> ·{' '}
+              <button onClick={() => setPanel('feedback')}>问题反馈</button> ·{' '}
               <a href={assetUrl('source.tar.gz')} download>
                 源码
               </a>
@@ -1524,6 +1527,7 @@ export function App() {
                     backup: '本地存储与备份',
                     help: '说明书与使用教程',
                     profile: '我的称呼',
+                    feedback: '问题反馈与联系',
                   }[panel]
                 }
               </h2>
@@ -1576,6 +1580,7 @@ export function App() {
                 </button>
               </form>
             )}
+            {panel === 'feedback' && <FeedbackPanel />}
             {panel === 'help' && (
               <>
                 <div className="help-tabs">
@@ -2115,6 +2120,7 @@ export function App() {
                   网页版实验阶段：记忆库、压缩和基础工具已接入；关页后台哨兵尚未接入；语义召回的
                   iPhone 性能待实测。请先使用测试内容。
                 </div>
+                <button onClick={() => setPanel('feedback')}>问题反馈与联系 →</button>
               </>
             )}
             {panel === 'mcp' && (
